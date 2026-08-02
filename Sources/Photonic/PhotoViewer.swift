@@ -5,6 +5,7 @@ struct PhotoViewer: View {
     @EnvironmentObject private var viewer: ViewerStore
     @State private var controlsVisible = true
     @State private var hideControlsTask: Task<Void, Never>?
+    @FocusState private var viewerHasFocus: Bool
 
     var body: some View {
         ZStack {
@@ -44,9 +45,14 @@ struct PhotoViewer: View {
                 scheduleControlHide()
             }
         }
-        .onAppear { scheduleControlHide() }
+        .onAppear {
+            scheduleControlHide()
+            requestViewerFocus()
+        }
+        .onChange(of: viewer.currentItem?.id) { _, _ in requestViewerFocus() }
         .onDisappear { hideControlsTask?.cancel() }
         .focusable()
+        .focused($viewerHasFocus)
         .focusEffectDisabled()
         .onKeyPress(.escape) {
             if viewer.isComparing { viewer.isComparing = false }
@@ -71,6 +77,10 @@ struct PhotoViewer: View {
         hideControlsTask?.cancel()
         controlsVisible = true
         scheduleControlHide()
+    }
+
+    private func requestViewerFocus() {
+        Task { @MainActor in viewerHasFocus = true }
     }
 
     private func scheduleControlHide() {

@@ -32,7 +32,7 @@ open ".build/Photonic.app"
 - Side-by-side comparison with another image
 - Finder reveal and native image-file opening
 
-Supported formats include JPEG, PNG, HEIC/HEIF, GIF, TIFF, BMP, and WebP when supported by the installed macOS version.
+Supported formats include JPEG, PNG, HEIC/HEIF/HIF, GIF, TIFF, BMP, and WebP when supported by the installed macOS version.
 
 ## Window architecture
 

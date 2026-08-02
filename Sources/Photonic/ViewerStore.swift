@@ -36,7 +36,7 @@ final class ViewerStore: ObservableObject {
     private var slideshowTask: Task<Void, Never>?
     private var openPanel: NSOpenPanel?
     private let supportedExtensions: Set<String> = [
-        "jpg", "jpeg", "png", "heic", "heif", "gif", "tif", "tiff", "bmp", "webp"
+        "jpg", "jpeg", "png", "heic", "heif", "hif", "gif", "tif", "tiff", "bmp", "webp"
     ]
 
     deinit {
@@ -61,7 +61,14 @@ final class ViewerStore: ObservableObject {
         let panel = NSOpenPanel()
         panel.title = selectingComparison ? "Choose an image to compare" : "Open an image or folder"
         panel.prompt = selectingComparison ? "Compare" : "Open"
-        panel.allowedContentTypes = selectingComparison ? [.image] : [.image, .folder]
+        var allowedContentTypes: [UTType] = [.image]
+        if let hifType = UTType(filenameExtension: "hif") {
+            allowedContentTypes.append(hifType)
+        }
+        if !selectingComparison {
+            allowedContentTypes.append(.folder)
+        }
+        panel.allowedContentTypes = allowedContentTypes
         panel.canChooseFiles = true
         panel.canChooseDirectories = !selectingComparison
         panel.allowsMultipleSelection = !selectingComparison
@@ -105,6 +112,7 @@ final class ViewerStore: ObservableObject {
         comparisonItem = nil
         isComparing = false
         resetViewState()
+        focusViewerWindow()
     }
 
     func open(url: URL) {
@@ -187,6 +195,15 @@ final class ViewerStore: ObservableObject {
     private func dismissOpenPanel() {
         openPanel?.cancel(nil)
         openPanel = nil
+    }
+
+    private func focusViewerWindow() {
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.windows
+                .first { $0 is ViewerOverlayWindow }?
+                .makeKeyAndOrderFront(nil)
+        }
     }
 
     private func siblingImages(around selected: URL) -> [URL] {

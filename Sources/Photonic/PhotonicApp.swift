@@ -190,6 +190,9 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
             let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
             if modifiers.isEmpty {
                 switch event.keyCode {
+                case 53 where self.viewer.currentItem == nil: // Escape
+                    window.close()
+                    return nil
                 case 123, 116: // Left arrow, Page Up
                     self.viewer.previous()
                     return nil
