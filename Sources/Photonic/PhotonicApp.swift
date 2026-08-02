@@ -6,6 +6,7 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
     private let viewer = ViewerStore()
     private var viewerWindow: ViewerOverlayWindow?
     private var eventMonitor: Any?
+    private var receivedExternalOpenRequest = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -13,11 +14,23 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
         showViewerWindow()
         installInputMonitor()
         NSApp.activate(ignoringOtherApps: true)
+
+        // Defer the normal picker by one run-loop turn. The panel is nonmodal,
+        // so a later LaunchServices document event can cancel it and open the
+        // double-clicked image directly.
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  !self.receivedExternalOpenRequest,
+                  self.viewer.currentItem == nil else { return }
+            self.viewer.presentOpenPanel()
+        }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        receivedExternalOpenRequest = true
         showViewerWindow()
         viewer.open(urls: urls)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

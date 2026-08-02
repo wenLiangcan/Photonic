@@ -34,6 +34,7 @@ final class ViewerStore: ObservableObject {
     @Published var zoomCommand: ZoomCommand?
 
     private var slideshowTask: Task<Void, Never>?
+    private var openPanel: NSOpenPanel?
     private let supportedExtensions: Set<String> = [
         "jpg", "jpeg", "png", "heic", "heif", "gif", "tif", "tiff", "bmp", "webp"
     ]
@@ -52,6 +53,11 @@ final class ViewerStore: ObservableObject {
     }
 
     func presentOpenPanel(selectingComparison: Bool = false) {
+        if let openPanel {
+            openPanel.makeKeyAndOrderFront(nil)
+            return
+        }
+
         let panel = NSOpenPanel()
         panel.title = selectingComparison ? "Choose an image to compare" : "Open an image or folder"
         panel.prompt = selectingComparison ? "Compare" : "Open"
@@ -61,16 +67,25 @@ final class ViewerStore: ObservableObject {
         panel.allowsMultipleSelection = !selectingComparison
         panel.resolvesAliases = true
 
-        guard panel.runModal() == .OK else { return }
-        if selectingComparison, let url = panel.url {
-            comparisonItem = ViewerItem(url: url.standardizedFileURL)
-            isComparing = true
-        } else {
-            open(urls: panel.urls)
+        openPanel = panel
+        panel.begin { [weak self, weak panel] response in
+            guard let self else { return }
+            defer {
+                if self.openPanel === panel { self.openPanel = nil }
+            }
+            guard response == .OK, let panel else { return }
+
+            if selectingComparison, let url = panel.url {
+                self.comparisonItem = ViewerItem(url: url.standardizedFileURL)
+                self.isComparing = true
+            } else {
+                self.open(urls: panel.urls)
+            }
         }
     }
 
     func open(urls: [URL]) {
+        dismissOpenPanel()
         let inputs = urls.map(\.standardizedFileURL)
         let selectedFile = inputs.first { !isDirectory($0) && isSupportedImage($0) }
         let containsFolder = inputs.contains(where: isDirectory)
@@ -167,6 +182,11 @@ final class ViewerStore: ObservableObject {
     private func resetViewState() {
         rotationQuarterTurns = 0
         zoomCommand = ZoomCommand(action: .fit)
+    }
+
+    private func dismissOpenPanel() {
+        openPanel?.cancel(nil)
+        openPanel = nil
     }
 
     private func siblingImages(around selected: URL) -> [URL] {

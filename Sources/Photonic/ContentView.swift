@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var viewer: ViewerStore
-    @State private var didRequestInitialImage = false
 
     var body: some View {
         ZStack {
@@ -21,12 +20,6 @@ struct ContentView: View {
         }
         .preferredColorScheme(.dark)
         .animation(.easeOut(duration: 0.22), value: viewer.currentItem?.id)
-        .task {
-            guard !didRequestInitialImage else { return }
-            didRequestInitialImage = true
-            try? await Task.sleep(for: .milliseconds(180))
-            if viewer.currentItem == nil { viewer.presentOpenPanel() }
-        }
     }
 }
 
@@ -80,6 +73,8 @@ private struct EmptyViewer: View {
                     .overlay { Circle().stroke(.white.opacity(0.10), lineWidth: 1) }
             }
             .buttonStyle(.plain)
+            .focusable(false)
+            .focusEffectDisabled()
             .foregroundStyle(.white.opacity(0.82))
             .help("Close window")
             .padding(18)
