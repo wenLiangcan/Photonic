@@ -10,6 +10,7 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        applySystemAppropriateAppIcon()
         installMainMenu()
         showViewerWindow()
         installInputMonitor()
@@ -105,6 +106,13 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
         window.contentView = overlayRoot
         window.makeKeyAndOrderFront(nil)
         viewerWindow = window
+    }
+
+    private func applySystemAppropriateAppIcon() {
+        guard #available(macOS 26.0, *),
+              let iconURL = Bundle.main.url(forResource: "Photonic26", withExtension: "icns"),
+              let icon = NSImage(contentsOf: iconURL) else { return }
+        NSApp.applicationIconImage = icon
     }
 
     private func installMainMenu() {

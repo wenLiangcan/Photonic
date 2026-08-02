@@ -31,6 +31,7 @@ mkdir -p "$CONTENTS_DIR/MacOS" "$CONTENTS_DIR/Resources"
 cp "$BIN_DIR/Photonic" "$CONTENTS_DIR/MacOS/Photonic"
 cp "$PROJECT_DIR/Resources/Info.plist" "$CONTENTS_DIR/Info.plist"
 cp "$PROJECT_DIR/Resources/Photonic.icns" "$CONTENTS_DIR/Resources/Photonic.icns"
+cp "$PROJECT_DIR/Resources/PhotonicSource.icns" "$CONTENTS_DIR/Resources/Photonic26.icns"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$CONTENTS_DIR/Info.plist"
 plutil -replace CFBundleVersion -string "$BUILD_NUMBER" "$CONTENTS_DIR/Info.plist"
 
