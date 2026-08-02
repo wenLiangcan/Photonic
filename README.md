@@ -6,6 +6,16 @@ A lightweight, native macOS image viewer. There is no library, catalog, import, 
 
 Download the latest macOS disk image from the [Photonic website](https://wenliangcan.github.io/Photonic/) or [GitHub Releases](https://github.com/wenLiangcan/Photonic/releases/latest).
 
+## First launch
+
+After dragging Photonic into the Applications folder, macOS quarantine must be removed before the app can start. If you downloaded Photonic from the official links above, open Terminal and run:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Photonic.app
+```
+
+Run this command only for the official Photonic download. It removes macOS's quarantine attribute from that copy of the app.
+
 ## Run
 
 ```bash

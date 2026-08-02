@@ -155,6 +155,41 @@
 
       .feature strong { display: block; margin-bottom: 5px; color: #f4fbff; }
 
+      .install {
+        margin-top: 56px;
+        padding: clamp(20px, 4vw, 30px);
+        border: 1px solid rgba(159, 231, 255, .22);
+        border-radius: 22px;
+        background: rgba(73, 162, 207, .08);
+      }
+
+      .install h2 {
+        margin: 0 0 10px;
+        font-size: 1.25rem;
+        letter-spacing: -.02em;
+      }
+
+      .install p {
+        margin: 0;
+        color: #aec5d3;
+        line-height: 1.55;
+      }
+
+      .install code {
+        display: block;
+        margin: 18px 0 12px;
+        padding: 15px 17px;
+        overflow-x: auto;
+        border: 1px solid rgba(255,255,255,.1);
+        border-radius: 13px;
+        color: #dff8ff;
+        background: rgba(0, 0, 0, .28);
+        font: 500 .9rem/1.45 "SFMono-Regular", Consolas, monospace;
+        white-space: nowrap;
+      }
+
+      .install .safety { color: #789bad; font-size: .86rem; }
+
       @media (max-width: 760px) {
         main { margin: 18px auto; border-radius: 26px; }
         .hero { grid-template-columns: 1fr; }
@@ -179,6 +214,13 @@
         <div class="icon-wrap">
           <img class="icon" src="photonic.png" alt="Photonic app icon">
         </div>
+      </section>
+
+      <section class="install" aria-labelledby="first-launch-title">
+        <h2 id="first-launch-title">Required before first launch</h2>
+        <p>After dragging Photonic into Applications, open Terminal and run:</p>
+        <code>xattr -dr com.apple.quarantine /Applications/Photonic.app</code>
+        <p class="safety">Run this only for Photonic downloaded from this official page. It removes macOS quarantine from that copy of the app.</p>
       </section>
 
       <section class="features" aria-label="Features">
