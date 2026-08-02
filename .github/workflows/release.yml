@@ -10,16 +10,11 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-15
+    runs-on: macos-26
 
     steps:
       - name: Check out release tag
         uses: actions/checkout@v6
-
-      - name: Select Swift 6.2
-        uses: swift-actions/setup-swift@65540b95f51493d65f5e59e97dcef9629ddf11bf
-        with:
-          swift-version: "6.2"
 
       - name: Validate tag and source version
         id: version
