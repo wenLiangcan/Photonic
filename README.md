@@ -2,6 +2,10 @@
 
 A lightweight, native macOS image viewer. There is no library, catalog, import, or cloud layer: open a file and view it immediately in a frameless desktop lightbox.
 
+## Download
+
+Download the latest macOS disk image from the [Photonic website](https://wenliangcan.github.io/Photonic/) or [GitHub Releases](https://github.com/wenLiangcan/Photonic/releases/latest).
+
 ## Run
 
 ```bash
@@ -33,6 +37,18 @@ open ".build/Photonic.app"
 - Finder reveal and native image-file opening
 
 Supported formats include JPEG, PNG, HEIC/HEIF/HIF, GIF, TIFF, BMP, and WebP when supported by the installed macOS version.
+
+## Release
+
+`VERSION` is the single source of truth for the marketing version. The packaging script writes it into the app bundle, and the release workflow refuses to publish a tag that does not match it.
+
+To publish a release:
+
+1. Update `VERSION` and commit the change.
+2. Create a matching tag such as `v0.1.0`.
+3. Push the commit and tag to GitHub.
+
+The release workflow builds a universal Apple silicon/Intel app, packages `Photonic-<version>.dmg`, verifies its version and architectures, creates a checksum, and publishes both files to GitHub Releases. Run `scripts/create-dmg.sh` to test the same packaging flow locally.
 
 ## Window architecture
 

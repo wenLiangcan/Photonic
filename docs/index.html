@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#091a2d">
+    <meta name="description" content="Download Photonic, a fast and focused image viewer for macOS.">
+    <title>Photonic — A focused image viewer for Mac</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+        background: #061321;
+        color: #f6fbff;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        overflow-x: hidden;
+        background:
+          radial-gradient(circle at 18% 12%, rgba(102, 205, 255, .34), transparent 34rem),
+          radial-gradient(circle at 84% 86%, rgba(94, 255, 190, .18), transparent 31rem),
+          linear-gradient(145deg, #102e4c 0%, #07182a 54%, #06111d 100%);
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        opacity: .24;
+        background-image: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+        background-size: 28px 28px;
+        mask-image: linear-gradient(to bottom, black, transparent 78%);
+      }
+
+      main {
+        width: min(1080px, calc(100% - 36px));
+        margin: 48px auto;
+        padding: clamp(32px, 7vw, 84px);
+        border: 1px solid rgba(200, 234, 255, .2);
+        border-radius: 36px;
+        background: rgba(7, 25, 43, .66);
+        box-shadow: 0 36px 90px rgba(0, 0, 0, .42), inset 0 1px rgba(255, 255, 255, .12);
+        backdrop-filter: blur(24px) saturate(130%);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(220px, 390px);
+        gap: clamp(36px, 8vw, 96px);
+        align-items: center;
+      }
+
+      .eyebrow {
+        margin: 0 0 18px;
+        color: #9fe7ff;
+        font-size: .78rem;
+        font-weight: 700;
+        letter-spacing: .16em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 650px;
+        font-size: clamp(3.5rem, 9vw, 7rem);
+        line-height: .88;
+        letter-spacing: -.075em;
+      }
+
+      .lede {
+        max-width: 590px;
+        margin: 30px 0 0;
+        color: #c5d8e5;
+        font-size: clamp(1.05rem, 2vw, 1.28rem);
+        line-height: 1.6;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 38px;
+      }
+
+      .button {
+        min-height: 52px;
+        padding: 0 22px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        border: 1px solid rgba(255,255,255,.14);
+        border-radius: 15px;
+        color: #061321;
+        background: linear-gradient(135deg, #9fe7ff, #91ffc4);
+        box-shadow: 0 12px 30px rgba(82, 199, 255, .22);
+        font-weight: 750;
+        text-decoration: none;
+        transition: transform .18s ease, box-shadow .18s ease;
+      }
+
+      .button:hover { transform: translateY(-2px); box-shadow: 0 16px 36px rgba(82, 199, 255, .3); }
+      .button.secondary { color: #d9eaf4; background: rgba(255,255,255,.06); box-shadow: none; }
+
+      .meta {
+        min-height: 24px;
+        margin: 16px 0 0;
+        color: #87a7ba;
+        font-size: .88rem;
+      }
+
+      .icon-wrap {
+        position: relative;
+        isolation: isolate;
+      }
+
+      .icon-wrap::after {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        inset: 10% 6% -5%;
+        border-radius: 38%;
+        background: rgba(65, 184, 255, .38);
+        filter: blur(46px);
+      }
+
+      .icon {
+        display: block;
+        width: 100%;
+        filter: drop-shadow(0 28px 28px rgba(0,0,0,.38));
+      }
+
+      .features {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-top: 68px;
+      }
+
+      .feature {
+        padding: 19px;
+        border: 1px solid rgba(196, 232, 255, .12);
+        border-radius: 18px;
+        color: #aec5d3;
+        background: rgba(255,255,255,.035);
+        line-height: 1.45;
+      }
+
+      .feature strong { display: block; margin-bottom: 5px; color: #f4fbff; }
+
+      @media (max-width: 760px) {
+        main { margin: 18px auto; border-radius: 26px; }
+        .hero { grid-template-columns: 1fr; }
+        .icon-wrap { width: min(300px, 78%); margin: 0 auto; grid-row: 1; }
+        .features { grid-template-columns: 1fr; margin-top: 44px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Native macOS image viewer</p>
+          <h1>See the photo.</h1>
+          <p class="lede">Photonic gets out of the way: open an image or folder, move fluidly through your photos, and zoom into every detail.</p>
+          <div class="actions">
+            <a class="button" id="download" href="https://github.com" rel="noopener">Download for Mac</a>
+            <a class="button secondary" id="source" href="https://github.com" rel="noopener">View source</a>
+          </div>
+          <p class="meta" id="release-status">Finding the latest release…</p>
+        </div>
+        <div class="icon-wrap">
+          <img class="icon" src="photonic.png" alt="Photonic app icon">
+        </div>
+      </section>
+
+      <section class="features" aria-label="Features">
+        <div class="feature"><strong>Fast by default</strong>Open a photo directly from Finder or browse a whole folder.</div>
+        <div class="feature"><strong>Fluid inspection</strong>Smooth wheel zoom, momentum panning, and keyboard navigation.</div>
+        <div class="feature"><strong>Focused viewing</strong>A native, translucent Mac interface with no catalog or editing clutter.</div>
+      </section>
+    </main>
+
+    <script>
+      const segments = location.pathname.split("/").filter(Boolean);
+      const owner = location.hostname.endsWith(".github.io") ? location.hostname.split(".")[0] : "wenLiangcan";
+      const repo = segments[0] || "Photonic";
+      const repositoryURL = `https://github.com/${owner}/${repo}`;
+      const download = document.querySelector("#download");
+      const source = document.querySelector("#source");
+      const status = document.querySelector("#release-status");
+
+      source.href = repositoryURL;
+      download.href = `${repositoryURL}/releases/latest`;
+
+      fetch(`https://api.github.com/repos/${owner}/${repo}/releases/latest`)
+        .then(response => {
+          if (!response.ok) throw new Error("Release unavailable");
+          return response.json();
+        })
+        .then(release => {
+          const dmg = release.assets.find(asset => asset.name.endsWith(".dmg"));
+          if (dmg) download.href = dmg.browser_download_url;
+          const version = release.tag_name.replace(/^v/, "");
+          status.textContent = `Version ${version} · macOS 14 or later`;
+        })
+        .catch(() => {
+          status.textContent = "Latest release · macOS 14 or later";
+        });
+    </script>
+  </body>
+</html>
