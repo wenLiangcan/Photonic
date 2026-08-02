@@ -5,21 +5,23 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>Picasa Viewer</string>
+    <string>Photonic</string>
     <key>CFBundleExecutable</key>
-    <string>Picasa</string>
+    <string>Photonic</string>
     <key>CFBundleIdentifier</key>
-    <string>com.picasa.viewer</string>
+    <string>com.photonic.viewer</string>
+    <key>CFBundleIconFile</key>
+    <string>Photonic.icns</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Picasa Viewer</string>
+    <string>Photonic</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>4</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>

@@ -3,15 +3,15 @@
 import PackageDescription
 
 let package = Package(
-    name: "Picasa",
+    name: "Photonic",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "Picasa", targets: ["Picasa"])
+        .executable(name: "Photonic", targets: ["Photonic"])
     ],
     targets: [
         .executableTarget(
-            name: "Picasa",
-            path: "Sources/Picasa"
+            name: "Photonic",
+            path: "Sources/Photonic"
         )
     ]
 )

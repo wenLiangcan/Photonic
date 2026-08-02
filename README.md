@@ -1,11 +1,11 @@
-# Picasa Viewer for Mac
+# Photonic for Mac
 
-A lightweight, native macOS image viewer inspired by Picasa's dedicated Photo Viewer. There is no library, catalog, import, or cloud layer: open a file and view it immediately in a frameless desktop lightbox.
+A lightweight, native macOS image viewer. There is no library, catalog, import, or cloud layer: open a file and view it immediately in a frameless desktop lightbox.
 
 ## Run
 
 ```bash
-swift run Picasa
+swift run Photonic
 ```
 
 Or build a double-clickable macOS application:
@@ -13,7 +13,7 @@ Or build a double-clickable macOS application:
 ```bash
 chmod +x scripts/package-app.sh
 scripts/package-app.sh release
-open ".build/Picasa Viewer.app"
+open ".build/Photonic.app"
 ```
 
 ## Features

@@ -1,6 +1,6 @@
 import AppKit
 
 let application = NSApplication.shared
-let delegate = PicasaAppDelegate()
+let delegate = PhotonicAppDelegate()
 application.delegate = delegate
 application.run()

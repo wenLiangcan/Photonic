@@ -182,7 +182,7 @@ private struct FloatingDock: View {
         .background {
             ZStack {
                 DockBlurView()
-                PicasaTheme.chrome.opacity(0.64)
+                PhotonicTheme.chrome.opacity(0.64)
             }
             .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         }
@@ -353,7 +353,7 @@ private struct DockButton: View {
                 .background(active ? .white.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
-        .foregroundStyle(active ? PicasaTheme.accent : .white.opacity(0.78))
+        .foregroundStyle(active ? PhotonicTheme.accent : .white.opacity(0.78))
         .help(help)
     }
 }

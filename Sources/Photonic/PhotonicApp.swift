@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class PicasaAppDelegate: NSObject, NSApplicationDelegate {
+final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
     private let viewer = ViewerStore()
     private var viewerWindow: ViewerOverlayWindow?
     private var eventMonitor: Any?
@@ -100,9 +100,9 @@ final class PicasaAppDelegate: NSObject, NSApplicationDelegate {
         let applicationItem = NSMenuItem()
         mainMenu.addItem(applicationItem)
         let applicationMenu = NSMenu()
-        applicationMenu.addItem(withTitle: "About Picasa Viewer", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        applicationMenu.addItem(withTitle: "About Photonic", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         applicationMenu.addItem(.separator())
-        applicationMenu.addItem(withTitle: "Quit Picasa Viewer", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        applicationMenu.addItem(withTitle: "Quit Photonic", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         applicationItem.submenu = applicationMenu
 
         let fileItem = NSMenuItem()
@@ -218,7 +218,7 @@ final class ViewerOverlayWindow: NSWindow {
             backing: .buffered,
             defer: false
         )
-        title = "Picasa Viewer"
+        title = "Photonic"
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
         titlebarSeparatorStyle = .none
