@@ -250,12 +250,10 @@ private struct ImageCanvas: View {
             .contentShape(Rectangle())
             .gesture(panGesture(in: proxy.size))
             .simultaneousGesture(magnifyGesture)
-            .onTapGesture(count: 2) {
-                withAnimation(.snappy(duration: 0.32)) {
-                    if zoom > 1.01 { zoom = 1; offset = .zero }
-                    else { zoom = 2.2 }
-                }
-            }
+            .simultaneousGesture(
+                SpatialTapGesture(count: 2)
+                    .onEnded { value in toggleZoom(at: value.location, in: proxy.size) }
+            )
             .onChange(of: zoomCommand) { _, command in
                 guard let command else { return }
                 switch command.action {
@@ -268,11 +266,13 @@ private struct ImageCanvas: View {
                     }
                 case .fit:
                     withAnimation(.snappy(duration: 0.26)) { zoom = 1; offset = .zero }
-                case .continuous(let delta):
+                case .continuous(let delta, let anchor):
+                    let frame = proxy.frame(in: .global)
+                    guard frame.contains(anchor) else { return }
+                    let location = CGPoint(x: anchor.x - frame.minX, y: anchor.y - frame.minY)
                     let target = min(max(zoom * exp(delta), 0.35), 8)
                     withAnimation(.interactiveSpring(response: 0.16, dampingFraction: 0.86, blendDuration: 0.08)) {
-                        zoom = target
-                        if target <= 1 { offset = .zero }
+                        applyZoom(target, anchoredAt: location, in: proxy.size)
                     }
                 }
             }
@@ -321,6 +321,44 @@ private struct ImageCanvas: View {
                 dragBase = nil
                 withAnimation(.interpolatingSpring(stiffness: 145, damping: 19)) { offset = target }
             }
+    }
+
+    private func toggleZoom(at location: CGPoint, in size: CGSize) {
+        withAnimation(.snappy(duration: 0.32)) {
+            if zoom > 1.01 {
+                zoom = 1
+                offset = .zero
+                return
+            }
+
+            applyZoom(2.2, anchoredAt: location, in: size)
+        }
+    }
+
+    private func applyZoom(_ targetZoom: Double, anchoredAt location: CGPoint, in size: CGSize) {
+        guard targetZoom > 1 else {
+            zoom = targetZoom
+            offset = .zero
+            return
+        }
+
+        let scaleRatio = targetZoom / zoom
+        let cursorFromCenter = CGPoint(
+            x: location.x - size.width / 2,
+            y: location.y - size.height / 2
+        )
+        let proposedOffset = CGSize(
+            width: cursorFromCenter.x * (1 - scaleRatio) + offset.width * scaleRatio,
+            height: cursorFromCenter.y * (1 - scaleRatio) + offset.height * scaleRatio
+        )
+        let limitX = size.width * min(0.46, (targetZoom - 1) * 0.42)
+        let limitY = size.height * min(0.46, (targetZoom - 1) * 0.42)
+
+        offset = CGSize(
+            width: min(max(proposedOffset.width, -limitX), limitX),
+            height: min(max(proposedOffset.height, -limitY), limitY)
+        )
+        zoom = targetZoom
     }
 
     private func resetView() {

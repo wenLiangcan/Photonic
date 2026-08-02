@@ -180,7 +180,13 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
                 // AppKit reports natural-scroll deltas opposite to the visual
                 // zoom convention: upward motion should move into the image.
                 let delta = min(max(-rawDelta * sensitivity, -0.34), 0.34)
-                self.viewer.requestZoom(.continuous(delta: delta))
+                guard let contentView = window.contentView else { return event }
+                let location = contentView.convert(event.locationInWindow, from: nil)
+                let anchor = CGPoint(
+                    x: location.x,
+                    y: contentView.bounds.height - location.y
+                )
+                self.viewer.requestZoom(.continuous(delta: delta, anchor: anchor))
                 return nil
             }
 

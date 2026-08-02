@@ -13,7 +13,7 @@ enum ZoomAction: Sendable {
     case zoomIn
     case zoomOut
     case fit
-    case continuous(delta: Double)
+    case continuous(delta: Double, anchor: CGPoint)
 }
 
 struct ZoomCommand: Equatable, Sendable {
@@ -73,6 +73,9 @@ final class ViewerStore: ObservableObject {
         panel.canChooseDirectories = !selectingComparison
         panel.allowsMultipleSelection = !selectingComparison
         panel.resolvesAliases = true
+        if selectingComparison, let currentItem {
+            panel.directoryURL = currentItem.url.deletingLastPathComponent()
+        }
 
         openPanel = panel
         panel.begin { [weak self, weak panel] response in
