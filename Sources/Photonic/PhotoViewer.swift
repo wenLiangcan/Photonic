@@ -301,22 +301,29 @@ private struct ImageCanvas: View {
     private func panGesture(in size: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 1)
             .onChanged { value in
-                guard zoom > 1.001 else { return }
+                let limits = panLimits(at: zoom, in: size)
+                guard limits.width > 0.5 || limits.height > 0.5 else { return }
                 if dragBase == nil { dragBase = offset }
                 let base = dragBase ?? offset
-                offset = CGSize(width: base.width + value.translation.width, height: base.height + value.translation.height)
+                offset = CGSize(
+                    width: rubberBanded(base.width + value.translation.width, limit: limits.width),
+                    height: rubberBanded(base.height + value.translation.height, limit: limits.height)
+                )
             }
             .onEnded { value in
-                guard zoom > 1.001 else { dragBase = nil; return }
+                let limits = panLimits(at: zoom, in: size)
+                guard limits.width > 0.5 || limits.height > 0.5 else {
+                    dragBase = nil
+                    offset = .zero
+                    return
+                }
                 let momentum = CGSize(
                     width: (value.predictedEndTranslation.width - value.translation.width) * 0.42,
                     height: (value.predictedEndTranslation.height - value.translation.height) * 0.42
                 )
-                let limitX = size.width * min(0.46, (zoom - 1) * 0.42)
-                let limitY = size.height * min(0.46, (zoom - 1) * 0.42)
                 let target = CGSize(
-                    width: min(max(offset.width + momentum.width, -limitX), limitX),
-                    height: min(max(offset.height + momentum.height, -limitY), limitY)
+                    width: min(max(offset.width + momentum.width, -limits.width), limits.width),
+                    height: min(max(offset.height + momentum.height, -limits.height), limits.height)
                 )
                 dragBase = nil
                 withAnimation(.interpolatingSpring(stiffness: 145, damping: 19)) { offset = target }
@@ -351,14 +358,43 @@ private struct ImageCanvas: View {
             width: cursorFromCenter.x * (1 - scaleRatio) + offset.width * scaleRatio,
             height: cursorFromCenter.y * (1 - scaleRatio) + offset.height * scaleRatio
         )
-        let limitX = size.width * min(0.46, (targetZoom - 1) * 0.42)
-        let limitY = size.height * min(0.46, (targetZoom - 1) * 0.42)
+        let limits = panLimits(at: targetZoom, in: size)
 
         offset = CGSize(
-            width: min(max(proposedOffset.width, -limitX), limitX),
-            height: min(max(proposedOffset.height, -limitY), limitY)
+            width: min(max(proposedOffset.width, -limits.width), limits.width),
+            height: min(max(proposedOffset.height, -limits.height), limits.height)
         )
         zoom = targetZoom
+    }
+
+    private func panLimits(at zoom: Double, in canvasSize: CGSize) -> CGSize {
+        guard let image = ImageCache.shared.image(for: item.url),
+              image.size.width > 0, image.size.height > 0,
+              canvasSize.width > 0, canvasSize.height > 0 else { return .zero }
+
+        let fitScale = min(
+            canvasSize.width / image.size.width,
+            canvasSize.height / image.size.height
+        )
+        var fittedWidth = image.size.width * fitScale
+        var fittedHeight = image.size.height * fitScale
+        let quarterTurns = Int((rotationDegrees / 90).rounded())
+        if abs(quarterTurns) % 2 == 1 {
+            swap(&fittedWidth, &fittedHeight)
+        }
+
+        return CGSize(
+            width: max(0, (fittedWidth * zoom - canvasSize.width) / 2),
+            height: max(0, (fittedHeight * zoom - canvasSize.height) / 2)
+        )
+    }
+
+    private func rubberBanded(_ value: CGFloat, limit: CGFloat) -> CGFloat {
+        let overflow = abs(value) - limit
+        guard overflow > 0 else { return value }
+        let resistance: CGFloat = 60
+        let resistedOverflow = resistance * (1 - 1 / (overflow / resistance + 1))
+        return value.sign == .minus ? -(limit + resistedOverflow) : limit + resistedOverflow
     }
 
     private func resetView() {
