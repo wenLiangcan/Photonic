@@ -48,7 +48,8 @@ jobs:
           test "$bundle_version" = "$version"
           test -f "dist/Photonic-$version.dmg"
           test -f "dist/Photonic-$version.dmg.sha256"
-          lipo -verify_arch arm64 x86_64 .build/Photonic.app/Contents/MacOS/Photonic
+          lipo .build/Photonic.app/Contents/MacOS/Photonic -verify_arch arm64 x86_64
+          (cd dist && shasum -a 256 -c "Photonic-$version.dmg.sha256")
 
       - name: Publish GitHub release
         env:
