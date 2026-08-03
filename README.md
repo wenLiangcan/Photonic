@@ -63,3 +63,9 @@ The release workflow builds a universal Apple silicon/Intel app, packages `Photo
 ## Window architecture
 
 The window is intentionally not a SwiftUI `WindowGroup`. AppKit creates a frameless, non-opaque normal-level `NSWindow`, places a dark-aqua `NSVisualEffectView` behind the content at partial alpha, and hosts the SwiftUI image canvas in a separate transparent `NSHostingView`. This keeps the photo fully opaque while the surrounding chrome reveals and blurs the live desktop beneath it without forcing the viewer above other apps.
+
+## License
+
+Copyright © 2026 wenLiangcan.
+
+Photonic is free software licensed under the [GNU General Public License, version 3 or later](LICENSE).
