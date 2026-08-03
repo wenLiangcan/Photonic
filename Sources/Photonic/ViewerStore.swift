@@ -9,6 +9,11 @@ struct ViewerItem: Identifiable, Hashable, Sendable {
     var fileName: String { url.lastPathComponent }
 }
 
+enum ViewerMode: String, Sendable {
+    case single
+    case waterfall
+}
+
 enum ZoomAction: Sendable {
     case zoomIn
     case zoomOut
@@ -33,6 +38,8 @@ final class ViewerStore: ObservableObject {
     @Published var isSlideshowRunning = false
     @Published var rotationQuarterTurns = 0
     @Published var zoomCommand: ZoomCommand?
+    @Published var viewMode: ViewerMode = .single
+    @Published var waterfallImageSize = 220.0
 
     private var slideshowTask: Task<Void, Never>?
     private var openPanel: NSOpenPanel?
@@ -129,6 +136,7 @@ final class ViewerStore: ObservableObject {
         currentIndex = 0
         comparisonItem = nil
         isComparing = false
+        viewMode = .single
     }
 
     func next() {
@@ -147,12 +155,34 @@ final class ViewerStore: ObservableObject {
         rotationQuarterTurns = (rotationQuarterTurns + 1) % 4
     }
 
+    func setViewMode(_ mode: ViewerMode) {
+        guard viewMode != mode else { return }
+        viewMode = mode
+        if mode == .waterfall {
+            stopSlideshow()
+            isComparing = false
+        } else {
+            resetViewState()
+        }
+    }
+
+    func toggleViewMode() {
+        setViewMode(viewMode == .single ? .waterfall : .single)
+    }
+
+    func showInSingleView(_ item: ViewerItem) {
+        guard let index = items.firstIndex(of: item) else { return }
+        currentIndex = index
+        viewMode = .single
+        resetViewState()
+    }
+
     func toggleSlideshow() {
         isSlideshowRunning ? stopSlideshow() : startSlideshow()
     }
 
     func startSlideshow() {
-        guard items.count > 1 else { return }
+        guard viewMode == .single, items.count > 1 else { return }
         isSlideshowRunning = true
         isComparing = false
         slideshowTask?.cancel()
@@ -172,6 +202,9 @@ final class ViewerStore: ObservableObject {
     }
 
     func toggleComparison() {
+        if viewMode == .waterfall {
+            setViewMode(.single)
+        }
         if isComparing {
             isComparing = false
         } else if comparisonItem != nil {

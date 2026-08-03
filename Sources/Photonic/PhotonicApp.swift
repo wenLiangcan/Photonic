@@ -16,6 +16,12 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
         installInputMonitor()
         NSApp.activate(ignoringOtherApps: true)
 
+        let commandLineURLs = commandLineOpenURLs()
+        if !commandLineURLs.isEmpty {
+            receivedExternalOpenRequest = true
+            viewer.open(urls: commandLineURLs)
+        }
+
         // Defer the normal picker by one run-loop turn. The panel is nonmodal,
         // so a later LaunchServices document event can cancel it and open the
         // double-clicked image directly.
@@ -64,6 +70,10 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleSlideshow() {
         viewer.toggleSlideshow()
+    }
+
+    @objc private func toggleWaterfallView() {
+        viewer.toggleViewMode()
     }
 
     @objc private func compareImages() {
@@ -141,6 +151,7 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
         imageMenu.addItem(.separator())
         imageMenu.addItem(menuItem("Rotate Clockwise", action: #selector(rotateImage), key: "r"))
         imageMenu.addItem(menuItem("Toggle Slideshow", action: #selector(toggleSlideshow)))
+        imageMenu.addItem(menuItem("Toggle Waterfall View", action: #selector(toggleWaterfallView), key: "g"))
         imageMenu.addItem(menuItem("Compare…", action: #selector(compareImages), key: "c", modifiers: [.command, .shift]))
         imageMenu.addItem(.separator())
         imageMenu.addItem(menuItem("Reveal in Finder", action: #selector(revealImage)))
@@ -178,6 +189,7 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
             }
 
             if event.type == .scrollWheel {
+                guard self.viewer.viewMode == .single else { return event }
                 let rawDelta = Double(event.scrollingDeltaY)
                 guard abs(rawDelta) > 0.001 else { return event }
 
@@ -219,12 +231,50 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
                 case 49: // Space
                     self.viewer.toggleSlideshow()
                     return nil
+                case 1 where self.viewer.currentItem != nil: // S
+                    self.viewer.setViewMode(.single)
+                    return nil
+                case 13 where self.viewer.currentItem != nil: // W
+                    self.viewer.setViewMode(.waterfall)
+                    return nil
                 default:
                     break
                 }
             }
             return event
         }
+    }
+
+    private func commandLineOpenURLs() -> [URL] {
+        var parsesOptions = true
+        var urls: [URL] = []
+
+        for argument in CommandLine.arguments.dropFirst() {
+            if parsesOptions, argument == "--" {
+                parsesOptions = false
+                continue
+            }
+            if parsesOptions, argument.hasPrefix("-") { continue }
+
+            let url: URL
+            if let fileURL = URL(string: argument), fileURL.isFileURL {
+                url = fileURL
+            } else {
+                let path = (argument as NSString).expandingTildeInPath
+                if path.hasPrefix("/") {
+                    url = URL(fileURLWithPath: path)
+                } else {
+                    url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                        .appendingPathComponent(path)
+                }
+            }
+
+            let standardizedURL = url.standardizedFileURL
+            if FileManager.default.fileExists(atPath: standardizedURL.path) {
+                urls.append(standardizedURL)
+            }
+        }
+        return urls
     }
 
     private func menuItem(

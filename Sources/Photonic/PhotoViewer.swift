@@ -5,6 +5,7 @@ struct PhotoViewer: View {
     @EnvironmentObject private var viewer: ViewerStore
     @State private var controlsVisible = true
     @State private var hideControlsTask: Task<Void, Never>?
+    @State private var isWaterfallSizeAdjusting = false
     @FocusState private var viewerHasFocus: Bool
 
     var body: some View {
@@ -18,13 +19,13 @@ struct PhotoViewer: View {
             VStack(spacing: 0) {
                 TopChrome()
                 Spacer()
-                FloatingDock()
+                FloatingDock(isWaterfallSizeAdjusting: $isWaterfallSizeAdjusting)
                     .padding(.bottom, 20)
             }
             .opacity(controlsVisible ? 1 : 0)
             .allowsHitTesting(controlsVisible)
 
-            if !viewer.isComparing {
+            if viewer.viewMode == .single && !viewer.isComparing {
                 HStack {
                     NavigationButton(icon: "chevron.left", action: viewer.previous)
                     Spacer()
@@ -94,7 +95,9 @@ struct PhotoViewer: View {
 
     @ViewBuilder
     private var viewerCanvas: some View {
-        if let item = viewer.currentItem {
+        if viewer.viewMode == .waterfall {
+            WaterfallView(isSizeAdjustmentActive: isWaterfallSizeAdjusting)
+        } else if let item = viewer.currentItem {
             if viewer.isComparing, let comparison = viewer.comparisonItem {
                 HStack(spacing: 1) {
                     ImageCanvas(
@@ -134,10 +137,10 @@ private struct TopChrome: View {
             Spacer()
 
             VStack(spacing: 1) {
-                Text(viewer.currentItem?.fileName ?? "")
+                Text(titleText)
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
-                Text(viewer.positionText)
+                Text(detailText)
                     .font(.system(size: 9.5, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(0.40))
             }
@@ -164,27 +167,58 @@ private struct TopChrome: View {
             )
         )
     }
+
+    private var titleText: String {
+        if viewer.viewMode == .waterfall {
+            return viewer.currentItem?.url.deletingLastPathComponent().lastPathComponent ?? "Waterfall"
+        }
+        return viewer.currentItem?.fileName ?? ""
+    }
+
+    private var detailText: String {
+        viewer.viewMode == .waterfall ? "\(viewer.items.count) images" : viewer.positionText
+    }
 }
 
 private struct FloatingDock: View {
     @EnvironmentObject private var viewer: ViewerStore
+    @Binding var isWaterfallSizeAdjusting: Bool
 
     var body: some View {
         HStack(spacing: 5) {
-            DockButton(icon: "minus.magnifyingglass", help: "Zoom out") { viewer.requestZoom(.zoomOut) }
-            DockButton(icon: "arrow.down.right.and.arrow.up.left", help: "Fit to window") { viewer.requestZoom(.fit) }
-            DockButton(icon: "plus.magnifyingglass", help: "Zoom in") { viewer.requestZoom(.zoomIn) }
-            DockDivider()
-            DockButton(icon: "rotate.right", help: "Rotate clockwise", action: viewer.rotateClockwise)
             DockButton(
-                icon: viewer.isSlideshowRunning ? "pause.fill" : "play.fill",
-                help: viewer.isSlideshowRunning ? "Pause slideshow" : "Start slideshow",
-                active: viewer.isSlideshowRunning,
-                action: viewer.toggleSlideshow
-            )
+                icon: "photo",
+                help: "Single image view (S)",
+                active: viewer.viewMode == .single
+            ) { viewer.setViewMode(.single) }
+            DockButton(
+                icon: "square.grid.2x2",
+                help: "Waterfall view (W)",
+                active: viewer.viewMode == .waterfall
+            ) { viewer.setViewMode(.waterfall) }
             DockDivider()
-            DockButton(icon: "rectangle.split.2x1", help: "Compare side by side", active: viewer.isComparing) {
-                viewer.toggleComparison()
+
+            if viewer.viewMode == .waterfall {
+                WaterfallSizeControl(
+                    size: $viewer.waterfallImageSize,
+                    isAdjusting: $isWaterfallSizeAdjusting
+                )
+            } else {
+                DockButton(icon: "minus.magnifyingglass", help: "Zoom out") { viewer.requestZoom(.zoomOut) }
+                DockButton(icon: "arrow.down.right.and.arrow.up.left", help: "Fit to window") { viewer.requestZoom(.fit) }
+                DockButton(icon: "plus.magnifyingglass", help: "Zoom in") { viewer.requestZoom(.zoomIn) }
+                DockDivider()
+                DockButton(icon: "rotate.right", help: "Rotate clockwise", action: viewer.rotateClockwise)
+                DockButton(
+                    icon: viewer.isSlideshowRunning ? "pause.fill" : "play.fill",
+                    help: viewer.isSlideshowRunning ? "Pause slideshow" : "Start slideshow",
+                    active: viewer.isSlideshowRunning,
+                    action: viewer.toggleSlideshow
+                )
+                DockDivider()
+                DockButton(icon: "rectangle.split.2x1", help: "Compare side by side", active: viewer.isComparing) {
+                    viewer.toggleComparison()
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -202,6 +236,30 @@ private struct FloatingDock: View {
         }
         .shadow(color: .black.opacity(0.48), radius: 20, y: 8)
         .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+private struct WaterfallSizeControl: View {
+    @Binding var size: Double
+    @Binding var isAdjusting: Bool
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "photo")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.white.opacity(0.50))
+            Slider(value: $size, in: 120...420) { editing in
+                isAdjusting = editing
+            }
+                .controlSize(.small)
+                .tint(PhotonicTheme.accent)
+                .frame(width: 150)
+                .help("Image size")
+            Image(systemName: "photo")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.white.opacity(0.72))
+        }
+        .padding(.horizontal, 5)
     }
 }
 
