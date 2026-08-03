@@ -1,4 +1,5 @@
 import AppKit
+import MapKit
 import SwiftUI
 
 @MainActor
@@ -7,6 +8,10 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
     private var viewerWindow: ViewerOverlayWindow?
     private var eventMonitor: Any?
     private var receivedExternalOpenRequest = false
+    private var horizontalScrollAccumulator = 0.0
+    private var horizontalScrollDidNavigate = false
+    private var horizontalScrollResetTask: Task<Void, Never>?
+    private var lastPhaseLessHorizontalNavigationTime = -Double.infinity
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -45,6 +50,7 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
+        horizontalScrollResetTask?.cancel()
     }
 
     @objc private func openImage() {
@@ -201,6 +207,14 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
 
             if event.type == .scrollWheel {
                 guard self.viewer.viewMode == .single else { return event }
+
+                // The app-level image zoom monitor must not steal wheel events
+                // from MapKit. Let the map handle both two-axis panning and its
+                // native cursor-centered wheel zoom behavior.
+                if self.isMapEvent(event, in: window) { return event }
+
+                if self.handleHorizontalImageNavigation(event) { return nil }
+
                 let rawDelta = Double(event.scrollingDeltaY)
                 guard abs(rawDelta) > 0.001 else { return event }
 
@@ -329,6 +343,103 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             return event
+        }
+    }
+
+    private func isMapEvent(_ event: NSEvent, in window: NSWindow) -> Bool {
+        guard let contentView = window.contentView else { return false }
+        let location = contentView.convert(event.locationInWindow, from: nil)
+        var hitView = contentView.hitTest(location)
+
+        while let view = hitView {
+            if view is MKMapView { return true }
+            hitView = view.superview
+        }
+        return false
+    }
+
+    private func handleHorizontalImageNavigation(_ event: NSEvent) -> Bool {
+        let rawX = Double(event.scrollingDeltaX)
+        let rawY = Double(event.scrollingDeltaY)
+        let isHorizontal = abs(rawX) > max(abs(rawY) * 1.15, 0.01)
+
+        if event.phase.contains(.began) {
+            horizontalScrollAccumulator = 0
+            horizontalScrollDidNavigate = false
+        }
+
+        guard isHorizontal else {
+            if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
+                resetHorizontalScrollState()
+            }
+            return false
+        }
+
+        // Momentum belongs to the gesture that already changed the image. It
+        // should never cascade through several photos after the fingers lift.
+        if !event.momentumPhase.isEmpty {
+            scheduleHorizontalScrollReset()
+            return true
+        }
+
+        let directionAdjustedX = event.isDirectionInvertedFromDevice ? -rawX : rawX
+
+        // Horizontal mouse wheels such as the Logitech MX Master thumb wheel
+        // report precise deltas without trackpad gesture phases. Treat those as
+        // repeatable wheel input with a deliberately slow cadence. Logitech's
+        // driver can keep emitting phase-less events while the wheel is at rest,
+        // so an idle/burst lock can permanently suppress later navigation.
+        if event.phase.isEmpty {
+            horizontalScrollAccumulator += directionAdjustedX
+            let threshold = event.hasPreciseScrollingDeltas ? 1.0 : 0.01
+            let cooldownHasElapsed = event.timestamp - lastPhaseLessHorizontalNavigationTime >= 0.45
+            if abs(horizontalScrollAccumulator) >= threshold, cooldownHasElapsed {
+                navigateFromHorizontalScroll(horizontalScrollAccumulator)
+                horizontalScrollAccumulator = 0
+                lastPhaseLessHorizontalNavigationTime = event.timestamp
+            }
+            return true
+        }
+
+        scheduleHorizontalScrollReset()
+
+        if event.hasPreciseScrollingDeltas {
+            horizontalScrollAccumulator += directionAdjustedX
+            if !horizontalScrollDidNavigate, abs(horizontalScrollAccumulator) >= 48 {
+                navigateFromHorizontalScroll(horizontalScrollAccumulator)
+                horizontalScrollDidNavigate = true
+            }
+        } else if abs(directionAdjustedX) > 0.01 {
+            navigateFromHorizontalScroll(directionAdjustedX)
+        }
+
+        if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
+            resetHorizontalScrollState()
+        }
+        return true
+    }
+
+    private func scheduleHorizontalScrollReset(after delay: Duration = .milliseconds(180)) {
+        horizontalScrollResetTask?.cancel()
+        horizontalScrollResetTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            self?.resetHorizontalScrollState()
+        }
+    }
+
+    private func resetHorizontalScrollState() {
+        horizontalScrollResetTask?.cancel()
+        horizontalScrollResetTask = nil
+        horizontalScrollAccumulator = 0
+        horizontalScrollDidNavigate = false
+    }
+
+    private func navigateFromHorizontalScroll(_ delta: Double) {
+        if delta > 0 {
+            viewer.next()
+        } else {
+            viewer.previous()
         }
     }
 

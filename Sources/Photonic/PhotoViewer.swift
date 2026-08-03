@@ -6,6 +6,7 @@ struct PhotoViewer: View {
     @State private var controlsVisible = true
     @State private var hideControlsTask: Task<Void, Never>?
     @State private var isWaterfallSizeAdjusting = false
+    @State private var isInspectorVisible = false
     @FocusState private var viewerHasFocus: Bool
 
     var body: some View {
@@ -36,6 +37,37 @@ struct PhotoViewer: View {
                 .allowsHitTesting(controlsVisible)
             }
 
+            if viewer.viewMode == .single,
+               !viewer.isComparing,
+               isInspectorVisible,
+               let item = viewer.currentItem {
+                HStack {
+                    Spacer()
+                    PhotoInspectorSidebar(item: item) {
+                        isInspectorVisible = false
+                    }
+                }
+                .padding(.top, 62)
+                .padding(.trailing, 18)
+                .padding(.bottom, 94)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .zIndex(8)
+            }
+
+            if viewer.viewMode == .single, let feedback = viewer.navigationLoopFeedback {
+                NavigationLoopFeedbackView(feedback: feedback)
+                    .padding(.bottom, 94)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(10)
+                    .task(id: feedback.id) {
+                        try? await Task.sleep(for: .seconds(1.15))
+                        guard !Task.isCancelled,
+                              viewer.navigationLoopFeedback?.id == feedback.id else { return }
+                        viewer.navigationLoopFeedback = nil
+                    }
+            }
+
             if viewer.isShortcutReferenceVisible {
                 ShortcutReferenceOverlay()
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
@@ -45,6 +77,8 @@ struct PhotoViewer: View {
         .ignoresSafeArea(.container, edges: .top)
         .animation(.easeOut(duration: 0.28), value: controlsVisible)
         .animation(.easeOut(duration: 0.18), value: viewer.isShortcutReferenceVisible)
+        .animation(.easeOut(duration: 0.18), value: viewer.navigationLoopFeedback?.id)
+        .animation(.smooth(duration: 0.28), value: isInspectorVisible)
         .onContinuousHover { phase in
             switch phase {
             case .active:
@@ -58,6 +92,12 @@ struct PhotoViewer: View {
             requestViewerFocus()
         }
         .onChange(of: viewer.currentItem?.id) { _, _ in requestViewerFocus() }
+        .onChange(of: viewer.viewMode) { _, mode in
+            if mode != .single { isInspectorVisible = false }
+        }
+        .onChange(of: viewer.isComparing) { _, comparing in
+            if comparing { isInspectorVisible = false }
+        }
         .onDisappear { hideControlsTask?.cancel() }
         .focusable()
         .focused($viewerHasFocus)
@@ -151,10 +191,44 @@ struct PhotoViewer: View {
                 ImageCanvas(
                     item: item,
                     rotationDegrees: Double(viewer.rotationQuarterTurns * 90),
-                    zoomCommand: viewer.zoomCommand
+                    zoomCommand: viewer.zoomCommand,
+                    onSingleClick: { isInspectorVisible.toggle() }
                 )
             }
         }
+    }
+}
+
+private struct NavigationLoopFeedbackView: View {
+    let feedback: NavigationLoopFeedback
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: feedback.destination == .first ? "arrow.right.to.line" : "arrow.left.to.line")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(PhotonicTheme.accent)
+            Text(feedback.destination == .first ? "First Image" : "Last Image")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 36)
+        .background {
+            ZStack {
+                DockBlurView()
+                PhotonicTheme.chrome.opacity(0.62)
+            }
+            .clipShape(Capsule())
+        }
+        .overlay {
+            Capsule()
+                .stroke(.white.opacity(0.13), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.38), radius: 14, y: 7)
+        .allowsHitTesting(false)
+        .accessibilityLabel(
+            feedback.destination == .first ? "First Image" : "Last Image"
+        )
     }
 }
 
@@ -197,6 +271,7 @@ private struct ShortcutReferenceOverlay: View {
                         ("J", "Previous image"),
                         ("K", "Next image"),
                         ("←  →", "Previous / next"),
+                        ("↔ Scroll", "Previous / next"),
                         ("Space", "Play / pause slideshow"),
                         ("Scroll", "Zoom at cursor")
                     ])
@@ -455,6 +530,7 @@ private struct ImageCanvas: View {
     let item: ViewerItem
     let rotationDegrees: Double
     let zoomCommand: ZoomCommand?
+    var onSingleClick: () -> Void = {}
 
     @Environment(\.displayScale) private var displayScale
     @State private var zoom = 1.0
@@ -486,7 +562,17 @@ private struct ImageCanvas: View {
             .simultaneousGesture(magnifyGesture)
             .simultaneousGesture(
                 SpatialTapGesture(count: 2)
-                    .onEnded { value in toggleZoom(at: value.location, in: proxy.size) }
+                    .exclusively(before: SpatialTapGesture(count: 1))
+                    .onEnded { value in
+                        switch value {
+                        case .first(let doubleTap):
+                            toggleZoom(at: doubleTap.location, in: proxy.size)
+                        case .second(let singleTap):
+                            if isPointOverImage(singleTap.location, in: proxy.size) {
+                                onSingleClick()
+                            }
+                        }
+                    }
             )
             .onChange(of: zoomCommand) { _, command in
                 guard let command else { return }
@@ -620,6 +706,26 @@ private struct ImageCanvas: View {
             width: max(0, (displaySize.width * zoom - canvasSize.width) / 2),
             height: max(0, (displaySize.height * zoom - canvasSize.height) / 2)
         )
+    }
+
+    private func isPointOverImage(_ location: CGPoint, in canvasSize: CGSize) -> Bool {
+        guard let image = ImageCache.shared.image(for: item.url) else { return false }
+        var displaySize = baseImageSize(for: image, in: canvasSize)
+        if isQuarterTurnRotation {
+            displaySize = CGSize(width: displaySize.height, height: displaySize.width)
+        }
+        displaySize.width *= zoom
+        displaySize.height *= zoom
+        let center = CGPoint(
+            x: canvasSize.width / 2 + offset.width,
+            y: canvasSize.height / 2 + offset.height
+        )
+        return CGRect(
+            x: center.x - displaySize.width / 2,
+            y: center.y - displaySize.height / 2,
+            width: displaySize.width,
+            height: displaySize.height
+        ).contains(location)
     }
 
     private func baseImageSize(for image: NSImage, in canvasSize: CGSize) -> CGSize {
