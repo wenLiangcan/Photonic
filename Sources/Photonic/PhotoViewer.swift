@@ -35,9 +35,16 @@ struct PhotoViewer: View {
                 .opacity(controlsVisible ? 1 : 0)
                 .allowsHitTesting(controlsVisible)
             }
+
+            if viewer.isShortcutReferenceVisible {
+                ShortcutReferenceOverlay()
+                    .transition(.scale(scale: 0.96).combined(with: .opacity))
+                    .zIndex(20)
+            }
         }
         .ignoresSafeArea(.container, edges: .top)
         .animation(.easeOut(duration: 0.28), value: controlsVisible)
+        .animation(.easeOut(duration: 0.18), value: viewer.isShortcutReferenceVisible)
         .onContinuousHover { phase in
             switch phase {
             case .active:
@@ -56,20 +63,47 @@ struct PhotoViewer: View {
         .focused($viewerHasFocus)
         .focusEffectDisabled()
         .onKeyPress(.escape) {
-            if viewer.isComparing { viewer.isComparing = false }
+            if viewer.isShortcutReferenceVisible { viewer.isShortcutReferenceVisible = false }
+            else if viewer.isComparing { viewer.isComparing = false }
             else { viewer.closeImage() }
             return .handled
         }
         .onKeyPress(.leftArrow) {
-            viewer.previous()
+            if viewer.viewMode == .waterfall { viewer.navigateWaterfall(.left) }
+            else { viewer.previous() }
             return .handled
         }
         .onKeyPress(.rightArrow) {
-            viewer.next()
+            if viewer.viewMode == .waterfall { viewer.navigateWaterfall(.right) }
+            else { viewer.next() }
             return .handled
         }
         .onKeyPress(.space) {
             viewer.toggleSlideshow()
+            return .handled
+        }
+        .onKeyPress("h") {
+            guard viewer.viewMode == .waterfall else { return .ignored }
+            viewer.navigateWaterfall(.left)
+            return .handled
+        }
+        .onKeyPress("j") {
+            if viewer.viewMode == .waterfall { viewer.navigateWaterfall(.down) }
+            else { viewer.previous() }
+            return .handled
+        }
+        .onKeyPress("k") {
+            if viewer.viewMode == .waterfall { viewer.navigateWaterfall(.up) }
+            else { viewer.next() }
+            return .handled
+        }
+        .onKeyPress("l") {
+            guard viewer.viewMode == .waterfall else { return .ignored }
+            viewer.navigateWaterfall(.right)
+            return .handled
+        }
+        .onKeyPress("?") {
+            viewer.toggleShortcutReference()
             return .handled
         }
     }
@@ -121,6 +155,146 @@ struct PhotoViewer: View {
                 )
             }
         }
+    }
+}
+
+private struct ShortcutReferenceOverlay: View {
+    @EnvironmentObject private var viewer: ViewerStore
+
+    var body: some View {
+        ZStack {
+            Button {
+                viewer.isShortcutReferenceVisible = false
+            } label: {
+                Color.black.opacity(0.18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 22) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Keyboard Shortcuts")
+                            .font(.system(size: 21, weight: .semibold))
+                        Text("Navigate Photonic without leaving the image")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.white.opacity(0.52))
+                    }
+                    Spacer()
+                    Button {
+                        viewer.isShortcutReferenceVisible = false
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(.plain)
+                    .background(.white.opacity(0.08), in: Circle())
+                }
+
+                HStack(alignment: .top, spacing: 34) {
+                    ShortcutSection(title: "Single image", rows: [
+                        ("J", "Previous image"),
+                        ("K", "Next image"),
+                        ("←  →", "Previous / next"),
+                        ("Space", "Play / pause slideshow"),
+                        ("Scroll", "Zoom at cursor")
+                    ])
+
+                    ShortcutSection(title: "Waterfall", rows: [
+                        ("H  J  K  L", "Move left / down / up / right"),
+                        ("⇧J  ⇧K", "Scroll down / up"),
+                        ("Arrow keys", "Move through the grid"),
+                        ("Return", "Open selected image"),
+                        ("S", "Switch to single image"),
+                        ("W", "Switch to Waterfall")
+                    ])
+                }
+
+                Divider().overlay(.white.opacity(0.08))
+
+                HStack(spacing: 20) {
+                    ShortcutInline(keys: "?", label: "Toggle shortcuts")
+                    ShortcutInline(keys: "Esc", label: "Close")
+                    ShortcutInline(keys: "F", label: "Full screen")
+                }
+            }
+            .padding(26)
+            .frame(width: 610)
+            .background {
+                ZStack {
+                    DockBlurView()
+                    PhotonicTheme.chrome.opacity(0.58)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(.white.opacity(0.14), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.55), radius: 38, y: 18)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+private struct ShortcutSection: View {
+    let title: String
+    let rows: [(String, String)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(1.1)
+                .foregroundStyle(PhotonicTheme.accent.opacity(0.92))
+
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 10) {
+                    ShortcutKey(row.0)
+                        .frame(width: 86, alignment: .leading)
+                    Text(row.1)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct ShortcutInline: View {
+    let keys: String
+    let label: String
+
+    var body: some View {
+        HStack(spacing: 7) {
+            ShortcutKey(keys)
+            Text(label)
+                .font(.system(size: 10.5))
+                .foregroundStyle(.white.opacity(0.56))
+        }
+    }
+}
+
+private struct ShortcutKey: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+            .foregroundStyle(.white.opacity(0.88))
+            .padding(.horizontal, 8)
+            .frame(minHeight: 24)
+            .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(.white.opacity(0.10), lineWidth: 1)
+            }
     }
 }
 

@@ -14,6 +14,22 @@ enum ViewerMode: String, Sendable {
     case waterfall
 }
 
+enum WaterfallNavigationDirection: Equatable, Sendable {
+    case left
+    case down
+    case up
+    case right
+}
+
+struct WaterfallNavigationCommand: Equatable, Sendable {
+    let id = UUID()
+    let direction: WaterfallNavigationDirection
+
+    static func == (lhs: WaterfallNavigationCommand, rhs: WaterfallNavigationCommand) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
 enum ZoomAction: Sendable {
     case zoomIn
     case zoomOut
@@ -40,6 +56,8 @@ final class ViewerStore: ObservableObject {
     @Published var zoomCommand: ZoomCommand?
     @Published var viewMode: ViewerMode = .single
     @Published var waterfallImageSize = 220.0
+    @Published var waterfallNavigationCommand: WaterfallNavigationCommand?
+    @Published var isShortcutReferenceVisible = false
 
     private var slideshowTask: Task<Void, Never>?
     private var openPanel: NSOpenPanel?
@@ -122,6 +140,7 @@ final class ViewerStore: ObservableObject {
         currentIndex = items.firstIndex { $0.url == selected } ?? 0
         comparisonItem = nil
         isComparing = false
+        isShortcutReferenceVisible = false
         resetViewState()
         focusViewerWindow()
     }
@@ -137,6 +156,7 @@ final class ViewerStore: ObservableObject {
         comparisonItem = nil
         isComparing = false
         viewMode = .single
+        isShortcutReferenceVisible = false
     }
 
     func next() {
@@ -175,6 +195,26 @@ final class ViewerStore: ObservableObject {
         currentIndex = index
         viewMode = .single
         resetViewState()
+    }
+
+    func selectInWaterfall(_ item: ViewerItem) {
+        guard viewMode == .waterfall, let index = items.firstIndex(of: item) else { return }
+        currentIndex = index
+    }
+
+    func navigateWaterfall(_ direction: WaterfallNavigationDirection) {
+        guard viewMode == .waterfall, currentItem != nil else { return }
+        waterfallNavigationCommand = WaterfallNavigationCommand(direction: direction)
+    }
+
+    func openWaterfallSelection() {
+        guard let currentItem else { return }
+        showInSingleView(currentItem)
+    }
+
+    func toggleShortcutReference() {
+        guard currentItem != nil else { return }
+        isShortcutReferenceVisible.toggle()
     }
 
     func toggleSlideshow() {

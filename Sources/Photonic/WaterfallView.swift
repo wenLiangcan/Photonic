@@ -75,6 +75,14 @@ struct WaterfallView: View {
                         settledThumbnailPixelSize = desiredThumbnailPixelSize
                     }
                 }
+                .onChange(of: viewer.waterfallNavigationCommand) { _, command in
+                    guard let command,
+                          let destination = layout.destination(
+                            from: viewer.currentItem,
+                            moving: command.direction
+                          ) else { return }
+                    viewer.selectInWaterfall(destination)
+                }
             }
             .onAppear {
                 revealCurrentImage(using: scrollProxy)
@@ -206,12 +214,42 @@ private struct WaterfallLayoutResult {
     struct Tile: Identifiable {
         let item: ViewerItem
         let height: CGFloat
+        let centerY: CGFloat
 
         var id: String { item.id }
     }
 
     let columns: [[Tile]]
     let itemWidth: CGFloat
+
+    func destination(
+        from currentItem: ViewerItem?,
+        moving direction: WaterfallNavigationDirection
+    ) -> ViewerItem? {
+        guard let currentItem,
+              let columnIndex = columns.firstIndex(where: { column in
+                  column.contains { $0.item == currentItem }
+              }),
+              let rowIndex = columns[columnIndex].firstIndex(where: { $0.item == currentItem }) else {
+            return columns.first?.first?.item
+        }
+
+        switch direction {
+        case .up:
+            guard rowIndex > 0 else { return nil }
+            return columns[columnIndex][rowIndex - 1].item
+        case .down:
+            guard rowIndex + 1 < columns[columnIndex].count else { return nil }
+            return columns[columnIndex][rowIndex + 1].item
+        case .left, .right:
+            let neighborIndex = direction == .left ? columnIndex - 1 : columnIndex + 1
+            guard columns.indices.contains(neighborIndex) else { return nil }
+            let currentCenter = columns[columnIndex][rowIndex].centerY
+            return columns[neighborIndex]
+                .min { abs($0.centerY - currentCenter) < abs($1.centerY - currentCenter) }?
+                .item
+        }
+    }
 
     init(
         items: [ViewerItem],
@@ -229,7 +267,11 @@ private struct WaterfallLayoutResult {
             let column = columnHeights.indices.min { columnHeights[$0] < columnHeights[$1] } ?? 0
             let aspectRatio = min(max(aspectRatios[item.id] ?? 4 / 3, 0.45), 2.8)
             let itemHeight = requestedWidth / aspectRatio
-            placedColumns[column].append(Tile(item: item, height: itemHeight))
+            placedColumns[column].append(Tile(
+                item: item,
+                height: itemHeight,
+                centerY: columnHeights[column] + itemHeight / 2
+            ))
             columnHeights[column] += itemHeight + spacing
         }
 

@@ -88,6 +88,10 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
         viewerWindow?.toggleFullScreen(nil)
     }
 
+    @objc private func toggleShortcutReference() {
+        viewer.toggleShortcutReference()
+    }
+
     private func showViewerWindow() {
         if let viewerWindow {
             viewerWindow.makeKeyAndOrderFront(nil)
@@ -163,6 +167,11 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         windowMenu.addItem(menuItem(
+            "Keyboard Shortcuts",
+            action: #selector(toggleShortcutReference)
+        ))
+        windowMenu.addItem(.separator())
+        windowMenu.addItem(menuItem(
             "Toggle Full Screen",
             action: #selector(toggleFullScreen),
             key: "f",
@@ -170,7 +179,17 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
         ))
         windowItem.submenu = windowMenu
 
+        let helpItem = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
+        let helpMenu = NSMenu(title: "Help")
+        helpMenu.addItem(menuItem(
+            "Keyboard Shortcuts",
+            action: #selector(toggleShortcutReference)
+        ))
+        helpItem.submenu = helpMenu
+        mainMenu.addItem(helpItem)
+
         NSApp.mainMenu = mainMenu
+        NSApp.helpMenu = helpMenu
     }
 
     private func installInputMonitor() {
@@ -210,32 +229,108 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
                 return nil
             }
 
+            let shortcutModifiers = event.modifierFlags.intersection([.command, .control, .option])
+            let isQuestionMark = event.characters == "?" || (
+                event.charactersIgnoringModifiers == "/" && event.modifierFlags.contains(.shift)
+            )
+            if shortcutModifiers.isEmpty, isQuestionMark {
+                self.viewer.toggleShortcutReference()
+                return nil
+            }
+
+            if self.viewer.isShortcutReferenceVisible {
+                if event.keyCode == 53 { // Escape
+                    self.viewer.isShortcutReferenceVisible = false
+                    return nil
+                }
+                let systemModifiers = event.modifierFlags.intersection([.command, .control, .option])
+                return systemModifiers.isEmpty ? nil : event
+            }
+
             // Arrow keys are tagged by AppKit with .function/.numericPad even
             // when the user holds no modifiers. Only treat intentional shortcut
             // modifiers as modifiers here.
             let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+            if modifiers == .shift, self.viewer.viewMode == .waterfall {
+                switch event.charactersIgnoringModifiers?.lowercased() {
+                case "j":
+                    self.scrollWaterfall(in: window, direction: 1)
+                    return nil
+                case "k":
+                    self.scrollWaterfall(in: window, direction: -1)
+                    return nil
+                default:
+                    break
+                }
+            }
+
             if modifiers.isEmpty {
+                switch event.charactersIgnoringModifiers?.lowercased() {
+                case "h" where self.viewer.viewMode == .waterfall:
+                    self.viewer.navigateWaterfall(.left)
+                    return nil
+                case "j":
+                    if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.down) }
+                    else { self.viewer.previous() }
+                    return nil
+                case "k":
+                    if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.up) }
+                    else { self.viewer.next() }
+                    return nil
+                case "l" where self.viewer.viewMode == .waterfall:
+                    self.viewer.navigateWaterfall(.right)
+                    return nil
+                case "f":
+                    self.toggleFullScreen()
+                    return nil
+                case "s" where self.viewer.currentItem != nil:
+                    self.viewer.setViewMode(.single)
+                    return nil
+                case "w" where self.viewer.currentItem != nil:
+                    self.viewer.setViewMode(.waterfall)
+                    return nil
+                default:
+                    break
+                }
+
                 switch event.keyCode {
                 case 53 where self.viewer.currentItem == nil: // Escape
                     window.close()
                     return nil
-                case 123, 116: // Left arrow, Page Up
+                case 123: // Left arrow
+                    if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.left) }
+                    else { self.viewer.previous() }
+                    return nil
+                case 124: // Right arrow
+                    if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.right) }
+                    else { self.viewer.next() }
+                    return nil
+                case 126 where self.viewer.viewMode == .waterfall: // Up arrow
+                    self.viewer.navigateWaterfall(.up)
+                    return nil
+                case 116 where self.viewer.viewMode == .waterfall: // Page Up
+                    self.viewer.navigateWaterfall(.up)
+                    return nil
+                case 125 where self.viewer.viewMode == .waterfall: // Down arrow
+                    self.viewer.navigateWaterfall(.down)
+                    return nil
+                case 121 where self.viewer.viewMode == .waterfall: // Page Down
+                    self.viewer.navigateWaterfall(.down)
+                    return nil
+                case 116: // Page Up
                     self.viewer.previous()
                     return nil
-                case 124, 121: // Right arrow, Page Down
+                case 121: // Page Down
                     self.viewer.next()
                     return nil
-                case 3: // F
-                    self.toggleFullScreen()
+                case 36 where self.viewer.viewMode == .waterfall: // Return
+                    self.viewer.openWaterfallSelection()
+                    return nil
+                case 76 where self.viewer.viewMode == .waterfall: // Keypad Enter
+                    self.viewer.openWaterfallSelection()
                     return nil
                 case 49: // Space
                     self.viewer.toggleSlideshow()
-                    return nil
-                case 1 where self.viewer.currentItem != nil: // S
-                    self.viewer.setViewMode(.single)
-                    return nil
-                case 13 where self.viewer.currentItem != nil: // W
-                    self.viewer.setViewMode(.waterfall)
                     return nil
                 default:
                     break
@@ -243,6 +338,27 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
             }
             return event
         }
+    }
+
+    private func scrollWaterfall(in window: NSWindow, direction: CGFloat) {
+        guard let contentView = window.contentView,
+              let scrollView = firstScrollView(in: contentView),
+              let documentView = scrollView.documentView else { return }
+
+        let clipView = scrollView.contentView
+        let pageDistance = max(clipView.bounds.height * 0.82, 120)
+        let maximumY = max(documentView.bounds.height - clipView.bounds.height, 0)
+        let targetY = min(max(clipView.bounds.origin.y + pageDistance * direction, 0), maximumY)
+        clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: targetY))
+        scrollView.reflectScrolledClipView(clipView)
+    }
+
+    private func firstScrollView(in view: NSView) -> NSScrollView? {
+        if let scrollView = view as? NSScrollView { return scrollView }
+        for subview in view.subviews {
+            if let scrollView = firstScrollView(in: subview) { return scrollView }
+        }
+        return nil
     }
 
     private func commandLineOpenURLs() -> [URL] {
