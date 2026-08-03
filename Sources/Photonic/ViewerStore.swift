@@ -13,6 +13,7 @@ enum ZoomAction: Sendable {
     case zoomIn
     case zoomOut
     case fit
+    case reset
     case continuous(delta: Double, anchor: CGPoint)
 }
 
@@ -192,7 +193,7 @@ final class ViewerStore: ObservableObject {
 
     private func resetViewState() {
         rotationQuarterTurns = 0
-        zoomCommand = ZoomCommand(action: .fit)
+        zoomCommand = ZoomCommand(action: .reset)
     }
 
     private func dismissOpenPanel() {

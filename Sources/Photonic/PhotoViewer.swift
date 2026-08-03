@@ -224,6 +224,7 @@ private struct ImageCanvas: View {
     let rotationDegrees: Double
     let zoomCommand: ZoomCommand?
 
+    @Environment(\.displayScale) private var displayScale
     @State private var zoom = 1.0
     @State private var offset = CGSize.zero
     @State private var magnifyBase: Double?
@@ -234,9 +235,10 @@ private struct ImageCanvas: View {
             ZStack {
                 Color.clear.contentShape(Rectangle())
                 if let image = ImageCache.shared.image(for: item.url) {
+                    let displaySize = baseImageSize(for: image, in: proxy.size)
                     Image(nsImage: image)
                         .resizable()
-                        .scaledToFit()
+                        .frame(width: displaySize.width, height: displaySize.height)
                         .rotationEffect(.degrees(rotationDegrees))
                         .scaleEffect(zoom)
                         .offset(offset)
@@ -265,7 +267,13 @@ private struct ImageCanvas: View {
                         if zoom <= 1 { offset = .zero }
                     }
                 case .fit:
-                    withAnimation(.snappy(duration: 0.26)) { zoom = 1; offset = .zero }
+                    withAnimation(.snappy(duration: 0.26)) {
+                        zoom = fitZoom(in: proxy.size)
+                        offset = .zero
+                    }
+                case .reset:
+                    zoom = 1
+                    offset = .zero
                 case .continuous(let delta, let anchor):
                     let frame = proxy.frame(in: .global)
                     guard frame.contains(anchor) else { return }
@@ -369,24 +377,65 @@ private struct ImageCanvas: View {
 
     private func panLimits(at zoom: Double, in canvasSize: CGSize) -> CGSize {
         guard let image = ImageCache.shared.image(for: item.url),
-              image.size.width > 0, image.size.height > 0,
               canvasSize.width > 0, canvasSize.height > 0 else { return .zero }
 
-        let fitScale = min(
-            canvasSize.width / image.size.width,
-            canvasSize.height / image.size.height
-        )
-        var fittedWidth = image.size.width * fitScale
-        var fittedHeight = image.size.height * fitScale
-        let quarterTurns = Int((rotationDegrees / 90).rounded())
-        if abs(quarterTurns) % 2 == 1 {
-            swap(&fittedWidth, &fittedHeight)
+        var displaySize = baseImageSize(for: image, in: canvasSize)
+        if isQuarterTurnRotation {
+            displaySize = CGSize(width: displaySize.height, height: displaySize.width)
         }
 
         return CGSize(
-            width: max(0, (fittedWidth * zoom - canvasSize.width) / 2),
-            height: max(0, (fittedHeight * zoom - canvasSize.height) / 2)
+            width: max(0, (displaySize.width * zoom - canvasSize.width) / 2),
+            height: max(0, (displaySize.height * zoom - canvasSize.height) / 2)
         )
+    }
+
+    private func baseImageSize(for image: NSImage, in canvasSize: CGSize) -> CGSize {
+        let pixelSize = imagePixelSize(image)
+        guard pixelSize.width > 0, pixelSize.height > 0, displayScale > 0 else { return .zero }
+
+        let nativeSize = CGSize(
+            width: pixelSize.width / displayScale,
+            height: pixelSize.height / displayScale
+        )
+        let orientedSize = isQuarterTurnRotation
+            ? CGSize(width: nativeSize.height, height: nativeSize.width)
+            : nativeSize
+        let fitScale = min(
+            canvasSize.width / orientedSize.width,
+            canvasSize.height / orientedSize.height
+        )
+        let openingScale = min(1, fitScale)
+        return CGSize(
+            width: nativeSize.width * openingScale,
+            height: nativeSize.height * openingScale
+        )
+    }
+
+    private func imagePixelSize(_ image: NSImage) -> CGSize {
+        guard let representation = image.representations.max(by: {
+            $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh
+        }), representation.pixelsWide > 0, representation.pixelsHigh > 0 else {
+            return image.size
+        }
+        return CGSize(width: representation.pixelsWide, height: representation.pixelsHigh)
+    }
+
+    private func fitZoom(in canvasSize: CGSize) -> Double {
+        guard let image = ImageCache.shared.image(for: item.url) else { return 1 }
+        var displaySize = baseImageSize(for: image, in: canvasSize)
+        if isQuarterTurnRotation {
+            displaySize = CGSize(width: displaySize.height, height: displaySize.width)
+        }
+        guard displaySize.width > 0, displaySize.height > 0 else { return 1 }
+        return min(max(min(
+            canvasSize.width / displaySize.width,
+            canvasSize.height / displaySize.height
+        ), 0.35), 8)
+    }
+
+    private var isQuarterTurnRotation: Bool {
+        abs(Int((rotationDegrees / 90).rounded())) % 2 == 1
     }
 
     private func rubberBanded(_ value: CGFloat, limit: CGFloat) -> CGFloat {
