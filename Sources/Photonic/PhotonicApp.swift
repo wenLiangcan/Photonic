@@ -73,6 +73,10 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
         viewer.rotateClockwise()
     }
 
+    @objc private func resetRotation() {
+        viewer.resetRotation()
+    }
+
     @objc private func toggleSlideshow() {
         viewer.toggleSlideshow()
     }
@@ -152,6 +156,7 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
         imageMenu.addItem(menuItem("Next Image", action: #selector(nextImage)))
         imageMenu.addItem(.separator())
         imageMenu.addItem(menuItem("Rotate Clockwise", action: #selector(rotateImage), key: "r"))
+        imageMenu.addItem(menuItem("Reset Rotation", action: #selector(resetRotation)))
         imageMenu.addItem(menuItem("Toggle Slideshow", action: #selector(toggleSlideshow)))
         imageMenu.addItem(menuItem("Toggle Waterfall View", action: #selector(toggleWaterfallView), key: "g"))
         imageMenu.addItem(menuItem("Compare…", action: #selector(compareImages), key: "c", modifiers: [.command, .shift]))
@@ -257,6 +262,32 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
             // when the user holds no modifiers. Only treat intentional shortcut
             // modifiers as modifiers here.
             let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+            let systemModifiers = event.modifierFlags.intersection([.command, .control, .option])
+            if systemModifiers.isEmpty,
+               event.modifierFlags.contains(.shift),
+               self.viewer.currentItem != nil {
+                let character = event.characters
+                let characterIgnoringModifiers = event.charactersIgnoringModifiers
+                let isPlusKey = event.keyCode == 24 || event.keyCode == 69
+                    || character == "+" || characterIgnoringModifiers == "="
+                let isMinusKey = event.keyCode == 27 || event.keyCode == 78
+                    || character == "_" || characterIgnoringModifiers == "-"
+                if isPlusKey {
+                    self.viewer.increaseImageSize()
+                    return nil
+                }
+                if isMinusKey {
+                    self.viewer.decreaseImageSize()
+                    return nil
+                }
+            }
+            if modifiers.isEmpty,
+               self.viewer.currentItem != nil,
+               event.charactersIgnoringModifiers == "0" {
+                self.viewer.resetRotation()
+                return nil
+            }
+
             if modifiers == .shift, self.viewer.viewMode == .waterfall {
                 switch event.charactersIgnoringModifiers?.lowercased() {
                 case "j":

@@ -40,6 +40,16 @@ struct NavigationLoopFeedback: Equatable, Identifiable, Sendable {
     let destination: Destination
 }
 
+struct SlideshowFeedback: Equatable, Identifiable, Sendable {
+    enum State: Equatable, Sendable {
+        case started
+        case stopped
+    }
+
+    let id = UUID()
+    let state: State
+}
+
 enum ZoomAction: Sendable {
     case zoomIn
     case zoomOut
@@ -69,6 +79,7 @@ final class ViewerStore: ObservableObject {
     @Published var waterfallNavigationCommand: WaterfallNavigationCommand?
     @Published var isShortcutReferenceVisible = false
     @Published var navigationLoopFeedback: NavigationLoopFeedback?
+    @Published var slideshowFeedback: SlideshowFeedback?
 
     private var slideshowTask: Task<Void, Never>?
     private var openPanel: NSOpenPanel?
@@ -153,6 +164,7 @@ final class ViewerStore: ObservableObject {
         isComparing = false
         isShortcutReferenceVisible = false
         navigationLoopFeedback = nil
+        slideshowFeedback = nil
         resetViewState()
         focusViewerWindow()
     }
@@ -170,6 +182,7 @@ final class ViewerStore: ObservableObject {
         viewMode = .single
         isShortcutReferenceVisible = false
         navigationLoopFeedback = nil
+        slideshowFeedback = nil
     }
 
     func next() {
@@ -196,10 +209,31 @@ final class ViewerStore: ObservableObject {
         rotationQuarterTurns = (rotationQuarterTurns + 1) % 4
     }
 
+    func resetRotation() {
+        rotationQuarterTurns = 0
+    }
+
+    func increaseImageSize() {
+        if viewMode == .waterfall {
+            waterfallImageSize = min(waterfallImageSize + 24, 420)
+        } else {
+            requestZoom(.zoomIn)
+        }
+    }
+
+    func decreaseImageSize() {
+        if viewMode == .waterfall {
+            waterfallImageSize = max(waterfallImageSize - 24, 120)
+        } else {
+            requestZoom(.zoomOut)
+        }
+    }
+
     func setViewMode(_ mode: ViewerMode) {
         guard viewMode != mode else { return }
         viewMode = mode
         navigationLoopFeedback = nil
+        slideshowFeedback = nil
         if mode == .waterfall {
             stopSlideshow()
             isComparing = false
@@ -240,7 +274,15 @@ final class ViewerStore: ObservableObject {
     }
 
     func toggleSlideshow() {
-        isSlideshowRunning ? stopSlideshow() : startSlideshow()
+        if isSlideshowRunning {
+            stopSlideshow()
+            slideshowFeedback = SlideshowFeedback(state: .stopped)
+        } else {
+            startSlideshow()
+            if isSlideshowRunning {
+                slideshowFeedback = SlideshowFeedback(state: .started)
+            }
+        }
     }
 
     func startSlideshow() {

@@ -68,6 +68,20 @@ struct PhotoViewer: View {
                     }
             }
 
+            if viewer.viewMode == .single, let feedback = viewer.slideshowFeedback {
+                SlideshowFeedbackView(feedback: feedback)
+                    .padding(.bottom, 94)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(11)
+                    .task(id: feedback.id) {
+                        try? await Task.sleep(for: .seconds(1.35))
+                        guard !Task.isCancelled,
+                              viewer.slideshowFeedback?.id == feedback.id else { return }
+                        viewer.slideshowFeedback = nil
+                    }
+            }
+
             if viewer.isShortcutReferenceVisible {
                 ShortcutReferenceOverlay()
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
@@ -78,6 +92,7 @@ struct PhotoViewer: View {
         .animation(.easeOut(duration: 0.28), value: controlsVisible)
         .animation(.easeOut(duration: 0.18), value: viewer.isShortcutReferenceVisible)
         .animation(.easeOut(duration: 0.18), value: viewer.navigationLoopFeedback?.id)
+        .animation(.easeOut(duration: 0.18), value: viewer.slideshowFeedback?.id)
         .animation(.smooth(duration: 0.28), value: isInspectorVisible)
         .onContinuousHover { phase in
             switch phase {
@@ -232,6 +247,35 @@ private struct NavigationLoopFeedbackView: View {
     }
 }
 
+private struct SlideshowFeedbackView: View {
+    let feedback: SlideshowFeedback
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: feedback.state == .started ? "pause.fill" : "stop.fill")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(PhotonicTheme.accent)
+            Text(feedback.state == .started ? "Slideshow Started" : "Slideshow Stopped")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 36)
+        .background {
+            ZStack {
+                DockBlurView()
+                PhotonicTheme.chrome.opacity(0.62)
+            }
+            .clipShape(Capsule())
+        }
+        .overlay {
+            Capsule().stroke(.white.opacity(0.13), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.38), radius: 14, y: 7)
+        .allowsHitTesting(false)
+    }
+}
+
 private struct ShortcutReferenceOverlay: View {
     @EnvironmentObject private var viewer: ViewerStore
 
@@ -272,6 +316,8 @@ private struct ShortcutReferenceOverlay: View {
                         ("K", "Next image"),
                         ("←  →", "Previous / next"),
                         ("↔ Scroll", "Previous / next"),
+                        ("⇧+  ⇧-", "Zoom in / out"),
+                        ("0", "Reset rotation"),
                         ("Space", "Play / pause slideshow"),
                         ("Scroll", "Zoom at cursor")
                     ])
@@ -281,6 +327,7 @@ private struct ShortcutReferenceOverlay: View {
                         ("⇧J  ⇧K", "Scroll down / up"),
                         ("Arrow keys", "Move through the grid"),
                         ("Return", "Open selected image"),
+                        ("⇧+  ⇧-", "Increase / decrease image size"),
                         ("S", "Switch to single image"),
                         ("W", "Switch to Waterfall")
                     ])
@@ -458,6 +505,15 @@ private struct FloatingDock: View {
                 DockButton(icon: "plus.magnifyingglass", help: "Zoom in") { viewer.requestZoom(.zoomIn) }
                 DockDivider()
                 DockButton(icon: "rotate.right", help: "Rotate clockwise", action: viewer.rotateClockwise)
+                if viewer.rotationQuarterTurns != 0 {
+                    DockButton(
+                        icon: "arrow.counterclockwise",
+                        help: "Reset rotation (0)",
+                        active: true,
+                        action: viewer.resetRotation
+                    )
+                    .transition(.scale.combined(with: .opacity))
+                }
                 DockButton(
                     icon: viewer.isSlideshowRunning ? "pause.fill" : "play.fill",
                     help: viewer.isSlideshowRunning ? "Pause slideshow" : "Start slideshow",
