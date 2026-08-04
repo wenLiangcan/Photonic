@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreServices
 import Foundation
 import ImageIO
 
@@ -70,6 +71,7 @@ actor ImageMetadataLoader {
         }
 
         let exif = dictionary(properties[kCGImagePropertyExifDictionary])
+        let exifAux = dictionary(properties[kCGImagePropertyExifAuxDictionary])
         let tiff = dictionary(properties[kCGImagePropertyTIFFDictionary])
         let gps = dictionary(properties[kCGImagePropertyGPSDictionary])
         var rows: [PhotoMetadata.Row] = []
@@ -77,6 +79,12 @@ actor ImageMetadataLoader {
         if let width = number(properties[kCGImagePropertyPixelWidth]),
            let height = number(properties[kCGImagePropertyPixelHeight]) {
             rows.append(.init(label: "Dimensions", value: "\(width.intValue) × \(height.intValue) px"))
+        }
+
+        if let fileSize = fileSize(for: url) {
+            let formatter = ByteCountFormatter()
+            formatter.countStyle = .file
+            rows.append(.init(label: "File Size", value: formatter.string(fromByteCount: fileSize)))
         }
 
         let make = string(tiff[kCGImagePropertyTIFFMake])
@@ -89,8 +97,36 @@ actor ImageMetadataLoader {
             rows.append(.init(label: "Camera", value: camera))
         }
 
-        if let lens = string(exif[kCGImagePropertyExifLensModel])?.nilIfEmpty {
+        if let lens = (
+            string(exif[kCGImagePropertyExifLensModel])
+                ?? string(exifAux[kCGImagePropertyExifAuxLensModel])
+        )?.nilIfEmpty {
             rows.append(.init(label: "Lens", value: lens))
+        }
+
+        let focalLength = positiveDouble(exif[kCGImagePropertyExifFocalLength])
+            ?? metadataNumber(from: source, paths: ["exif:FocalLength", "Exif:FocalLength"])
+            ?? spotlightNumber(for: url, attribute: kMDItemFocalLength)
+        let equivalentFocalLength = positiveDouble(exif[kCGImagePropertyExifFocalLenIn35mmFilm])
+            ?? metadataNumber(from: source, paths: [
+                "exif:FocalLengthIn35mmFilm",
+                "exif:FocalLenIn35mmFilm",
+                "Exif:FocalLengthIn35mmFilm"
+            ])
+            ?? spotlightNumber(for: url, attribute: kMDItemFocalLength35mm)
+
+        if let focalLength {
+            var value = formattedMillimeters(focalLength)
+            if let equivalentFocalLength,
+               abs(equivalentFocalLength - focalLength) >= 0.05 {
+                value += " (\(formattedMillimeters(equivalentFocalLength)) equivalent)"
+            }
+            rows.append(.init(label: "Focal Length", value: value))
+        } else if let equivalentFocalLength {
+            rows.append(.init(
+                label: "Focal Length",
+                value: "\(formattedMillimeters(equivalentFocalLength)) (35 mm equivalent)"
+            ))
         }
 
         if let date = string(exif[kCGImagePropertyExifDateTimeOriginal])
@@ -110,17 +146,6 @@ actor ImageMetadataLoader {
 
         if let iso = firstNumber(exif[kCGImagePropertyExifISOSpeedRatings]) {
             rows.append(.init(label: "ISO", value: "\(iso.intValue)"))
-        }
-
-        if let focalLength = number(exif[kCGImagePropertyExifFocalLength])?.doubleValue,
-           focalLength > 0 {
-            rows.append(.init(label: "Focal Length", value: String(format: "%.0f mm", focalLength)))
-        }
-
-        if let fileSize = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-            let formatter = ByteCountFormatter()
-            formatter.countStyle = .file
-            rows.append(.init(label: "File Size", value: formatter.string(fromByteCount: Int64(fileSize))))
         }
 
         return PhotoMetadata(rows: rows, location: location(from: gps))
@@ -154,6 +179,61 @@ actor ImageMetadataLoader {
     nonisolated private static func firstNumber(_ value: Any?) -> NSNumber? {
         if let number = value as? NSNumber { return number }
         return (value as? [NSNumber])?.first
+    }
+
+    nonisolated private static func positiveDouble(_ value: Any?) -> Double? {
+        if let value = number(value)?.doubleValue, value > 0 { return value }
+        guard let text = string(value)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return nil }
+
+        let components = text.split(separator: "/", maxSplits: 1)
+        if components.count == 2,
+           let numerator = Double(components[0]),
+           let denominator = Double(components[1]),
+           denominator != 0 {
+            let value = numerator / denominator
+            return value > 0 ? value : nil
+        }
+
+        guard let value = Scanner(string: text).scanDouble() else { return nil }
+        return value > 0 ? value : nil
+    }
+
+    nonisolated private static func metadataNumber(
+        from source: CGImageSource,
+        paths: [String]
+    ) -> Double? {
+        guard let metadata = CGImageSourceCopyMetadataAtIndex(source, 0, nil) else { return nil }
+        for path in paths {
+            guard let tag = CGImageMetadataCopyTagWithPath(metadata, nil, path as CFString) else { continue }
+            if let value = positiveDouble(CGImageMetadataTagCopyValue(tag)) { return value }
+        }
+        return nil
+    }
+
+    nonisolated private static func spotlightNumber(for url: URL, attribute: CFString) -> Double? {
+        guard let item = MDItemCreate(kCFAllocatorDefault, url.path as CFString),
+              let value = MDItemCopyAttribute(item, attribute) else { return nil }
+        return positiveDouble(value)
+    }
+
+    nonisolated private static func fileSize(for url: URL) -> Int64? {
+        if let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
+           let value = values.fileSize,
+           value >= 0 {
+            return Int64(value)
+        }
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let value = attributes[.size] as? NSNumber {
+            return value.int64Value
+        }
+        return nil
+    }
+
+    nonisolated private static func formattedMillimeters(_ value: Double) -> String {
+        let rounded = value.rounded()
+        if abs(value - rounded) < 0.05 { return String(format: "%.0f mm", rounded) }
+        return String(format: "%.1f mm", value)
     }
 
     nonisolated private static func string(_ value: Any?) -> String? {
