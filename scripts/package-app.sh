@@ -31,6 +31,23 @@ mkdir -p "$CONTENTS_DIR/MacOS" "$CONTENTS_DIR/Resources"
 cp "$BIN_DIR/Photonic" "$CONTENTS_DIR/MacOS/Photonic"
 cp "$PROJECT_DIR/Resources/Info.plist" "$CONTENTS_DIR/Info.plist"
 cp "$PROJECT_DIR/Resources/Photonic.icns" "$CONTENTS_DIR/Resources/Photonic.icns"
+
+# Xcode 26 compiles the Icon Composer document into native, adaptive icon
+# renditions (including dark and Liquid Glass appearances). Command Line Tools
+# do not include actool, so local CLT-only builds select a correctly padded
+# fallback matching the system appearance at packaging time.
+if ACTOOL="$(xcrun --find actool 2>/dev/null)"; then
+    "$ACTOOL" "$PROJECT_DIR/Resources/Photonic.icon" \
+        --compile "$CONTENTS_DIR/Resources" \
+        --platform macosx \
+        --minimum-deployment-target 14.0 \
+        --app-icon Photonic \
+        --output-partial-info-plist "$APP_DIR/icon-info.plist"
+    rm -f "$APP_DIR/icon-info.plist"
+elif [ "$(defaults read -g AppleInterfaceStyle 2>/dev/null || true)" = "Dark" ]; then
+    cp "$PROJECT_DIR/Resources/Photonic-Dark.icns" "$CONTENTS_DIR/Resources/Photonic.icns"
+fi
+
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$CONTENTS_DIR/Info.plist"
 plutil -replace CFBundleVersion -string "$BUILD_NUMBER" "$CONTENTS_DIR/Info.plist"
 

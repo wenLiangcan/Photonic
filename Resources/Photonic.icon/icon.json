@@ -1,14 +1,53 @@
 {
   "fill" : {
-    "automatic-gradient" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
+    "automatic-gradient" : "extended-gray:1.00000,1.00000"
   },
   "groups" : [
     {
       "layers" : [
         {
-          "blend-mode" : "normal",
-          "image-name" : "photonic2.svg",
-          "name" : "photonic2"
+          "image-name" : "Circle Red.svg",
+          "name" : "Circle Red",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              190,
+              -184
+            ]
+          }
+        },
+        {
+          "image-name" : "Circle Blue.svg",
+          "name" : "Circle Blue",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              -190,
+              -184
+            ]
+          }
+        },
+        {
+          "image-name" : "Circle Yellow.svg",
+          "name" : "Circle Yellow",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              190,
+              184
+            ]
+          }
+        },
+        {
+          "image-name" : "Circle Green.svg",
+          "name" : "Circle Green",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              -190,
+              184
+            ]
+          }
         }
       ],
       "shadow" : {
@@ -22,6 +61,9 @@
     }
   ],
   "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
     "squares" : "shared"
   }
 }

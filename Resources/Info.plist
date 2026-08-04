@@ -12,6 +12,8 @@
     <string>com.photonic.viewer</string>
     <key>CFBundleIconFile</key>
     <string>Photonic.icns</string>
+    <key>CFBundleIconName</key>
+    <string>Photonic</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
