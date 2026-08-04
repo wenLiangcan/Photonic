@@ -62,7 +62,7 @@ The release workflow builds a universal Apple silicon/Intel app, packages `Photo
 
 ### App icon
 
-`Resources/Photonic.icon` is the source of truth for the adaptive light, dark, and Liquid Glass icon. Xcode 26 builds compile it into the app automatically. Run `scripts/generate-legacy-icon.sh` after editing the Icon Composer document to refresh the padded light/dark `.icns` fallbacks and the website preview. CLT-only packages select the fallback matching the current system appearance.
+`Resources/Photonic.icon` is the sole source of truth for the adaptive light, dark, and Liquid Glass icon. Packaging requires full Xcode 26 or newer and invokes Apple's `actool` on every build to generate both `Assets.car` and the official compatibility `.icns`; no hand-generated icon fallback is used.
 
 ## Window architecture
 
