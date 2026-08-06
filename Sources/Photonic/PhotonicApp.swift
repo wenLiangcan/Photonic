@@ -214,9 +214,17 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
                 guard self.viewer.viewMode == .single else { return event }
 
                 // The app-level image zoom monitor must not steal wheel events
-                // from MapKit. Let the map handle both two-axis panning and its
-                // native cursor-centered wheel zoom behavior.
+                // from interactive sidebar content. Metadata pages consume the
+                // event here; MapKit receives its events normally.
+                if let pageWheelView = self.metadataPageWheelView(at: event, in: window) {
+                    pageWheelView.handleWheelEvent(event)
+                    return nil
+                }
                 if self.isMapEvent(event, in: window) { return event }
+                if let scrollView = self.scrollView(at: event, in: window) {
+                    scrollView.scrollWheel(with: event)
+                    return nil
+                }
 
                 if self.handleHorizontalImageNavigation(event) { return nil }
 
@@ -387,6 +395,38 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
             hitView = view.superview
         }
         return false
+    }
+
+    private func scrollView(at event: NSEvent, in window: NSWindow) -> NSScrollView? {
+        guard let contentView = window.contentView else { return nil }
+        let location = contentView.convert(event.locationInWindow, from: nil)
+        return scrollView(at: location, inside: contentView)
+    }
+
+    private func metadataPageWheelView(at event: NSEvent, in window: NSWindow) -> MetadataPageWheelView? {
+        guard let contentView = window.contentView else { return nil }
+        let location = contentView.convert(event.locationInWindow, from: nil)
+        return metadataPageWheelView(at: location, inside: contentView)
+    }
+
+    private func metadataPageWheelView(at point: NSPoint, inside parent: NSView) -> MetadataPageWheelView? {
+        for subview in parent.subviews.reversed() where !subview.isHidden && subview.alphaValue > 0 {
+            let localPoint = subview.convert(point, from: parent)
+            guard subview.bounds.contains(localPoint) else { continue }
+            if let pageWheelView = subview as? MetadataPageWheelView { return pageWheelView }
+            if let nested = metadataPageWheelView(at: localPoint, inside: subview) { return nested }
+        }
+        return nil
+    }
+
+    private func scrollView(at point: NSPoint, inside parent: NSView) -> NSScrollView? {
+        for subview in parent.subviews.reversed() where !subview.isHidden && subview.alphaValue > 0 {
+            let localPoint = subview.convert(point, from: parent)
+            guard subview.bounds.contains(localPoint) else { continue }
+            if let scrollView = subview as? NSScrollView { return scrollView }
+            if let nested = scrollView(at: localPoint, inside: subview) { return nested }
+        }
+        return nil
     }
 
     private func handleHorizontalImageNavigation(_ event: NSEvent) -> Bool {

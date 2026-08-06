@@ -73,6 +73,7 @@ actor ImageMetadataLoader {
         let exif = dictionary(properties[kCGImagePropertyExifDictionary])
         let exifAux = dictionary(properties[kCGImagePropertyExifAuxDictionary])
         let tiff = dictionary(properties[kCGImagePropertyTIFFDictionary])
+        let iptc = dictionary(properties[kCGImagePropertyIPTCDictionary])
         let gps = dictionary(properties[kCGImagePropertyGPSDictionary])
         var rows: [PhotoMetadata.Row] = []
 
@@ -104,6 +105,26 @@ actor ImageMetadataLoader {
             rows.append(.init(label: "Lens", value: lens))
         }
 
+        let iso = positiveDouble(firstNumber(exif[kCGImagePropertyExifISOSpeedRatings]))
+            ?? positiveDouble(exif[kCGImagePropertyExifStandardOutputSensitivity])
+            ?? positiveDouble(exif[kCGImagePropertyExifRecommendedExposureIndex])
+            ?? positiveDouble(exif[kCGImagePropertyExifISOSpeed])
+            ?? metadataNumber(from: source, paths: [
+                "exif:PhotographicSensitivity",
+                "exif:ISOSpeedRatings",
+                "exif:StandardOutputSensitivity",
+                "exif:RecommendedExposureIndex",
+                "exif:ISOSpeed",
+                "Exif:PhotographicSensitivity",
+                "Exif:ISOSpeedRatings",
+                "Exif:StandardOutputSensitivity",
+                "Exif:RecommendedExposureIndex",
+                "Exif:ISOSpeed"
+            ])
+            ?? spotlightNumber(for: url, attribute: kMDItemISOSpeed)
+        let captureDate = string(exif[kCGImagePropertyExifDateTimeOriginal])
+            ?? string(tiff[kCGImagePropertyTIFFDateTime])
+
         let focalLength = positiveDouble(exif[kCGImagePropertyExifFocalLength])
             ?? metadataNumber(from: source, paths: ["exif:FocalLength", "Exif:FocalLength"])
             ?? spotlightNumber(for: url, attribute: kMDItemFocalLength)
@@ -129,14 +150,8 @@ actor ImageMetadataLoader {
             ))
         }
 
-        if let date = string(exif[kCGImagePropertyExifDateTimeOriginal])
-            ?? string(tiff[kCGImagePropertyTIFFDateTime]) {
-            rows.append(.init(label: "Captured", value: formattedEXIFDate(date)))
-        }
-
-        if let exposure = number(exif[kCGImagePropertyExifExposureTime])?.doubleValue,
-           exposure > 0 {
-            rows.append(.init(label: "Exposure", value: formattedExposure(exposure)))
+        if let iso {
+            rows.append(.init(label: "ISO", value: formattedISO(iso)))
         }
 
         if let aperture = number(exif[kCGImagePropertyExifFNumber])?.doubleValue,
@@ -144,8 +159,36 @@ actor ImageMetadataLoader {
             rows.append(.init(label: "Aperture", value: String(format: "ƒ/%.1f", aperture)))
         }
 
-        if let iso = firstNumber(exif[kCGImagePropertyExifISOSpeedRatings]) {
-            rows.append(.init(label: "ISO", value: "\(iso.intValue)"))
+        if let exposure = number(exif[kCGImagePropertyExifExposureTime])?.doubleValue,
+           exposure > 0 {
+            rows.append(.init(label: "Exposure", value: formattedExposure(exposure)))
+        }
+
+        if let captureDate {
+            rows.append(.init(label: "Captured", value: formattedEXIFDate(captureDate)))
+        }
+
+        let author = displayString(tiff[kCGImagePropertyTIFFArtist])
+            ?? displayString(iptc[kCGImagePropertyIPTCByline])
+            ?? metadataString(from: source, paths: ["dc:creator", "photoshop:AuthorsPosition"])
+            ?? spotlightString(for: url, attribute: kMDItemAuthors)
+        if let author {
+            rows.append(.init(label: "Author", value: author))
+        }
+
+        let copyright = displayString(tiff[kCGImagePropertyTIFFCopyright])
+            ?? displayString(iptc[kCGImagePropertyIPTCCopyrightNotice])
+            ?? metadataString(from: source, paths: ["dc:rights"])
+            ?? spotlightString(for: url, attribute: kMDItemCopyright)
+        if let copyright {
+            rows.append(.init(label: "Copyright", value: copyright))
+        }
+
+        let editedSoftware = displayString(tiff[kCGImagePropertyTIFFSoftware])
+            ?? metadataString(from: source, paths: ["xmp:CreatorTool"])
+            ?? spotlightString(for: url, attribute: kMDItemCreator)
+        if let editedSoftware {
+            rows.append(.init(label: "Edited Software", value: editedSoftware))
         }
 
         return PhotoMetadata(rows: rows, location: location(from: gps))
@@ -211,10 +254,45 @@ actor ImageMetadataLoader {
         return nil
     }
 
+    nonisolated private static func metadataString(
+        from source: CGImageSource,
+        paths: [String]
+    ) -> String? {
+        guard let metadata = CGImageSourceCopyMetadataAtIndex(source, 0, nil) else { return nil }
+        for path in paths {
+            guard let tag = CGImageMetadataCopyTagWithPath(metadata, nil, path as CFString) else { continue }
+            if let value = displayString(CGImageMetadataTagCopyValue(tag)) { return value }
+        }
+        return nil
+    }
+
     nonisolated private static func spotlightNumber(for url: URL, attribute: CFString) -> Double? {
         guard let item = MDItemCreate(kCFAllocatorDefault, url.path as CFString),
               let value = MDItemCopyAttribute(item, attribute) else { return nil }
         return positiveDouble(value)
+    }
+
+    nonisolated private static func spotlightString(for url: URL, attribute: CFString) -> String? {
+        guard let item = MDItemCreate(kCFAllocatorDefault, url.path as CFString),
+              let value = MDItemCopyAttribute(item, attribute) else { return nil }
+        return displayString(value)
+    }
+
+    nonisolated private static func displayString(_ value: Any?) -> String? {
+        if let text = value as? String {
+            return text.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        }
+        if let values = value as? [Any] {
+            return values
+                .compactMap { displayString($0) }
+                .joined(separator: ", ")
+                .nilIfEmpty
+        }
+        if let values = value as? [String: Any] {
+            if let preferred = displayString(values["x-default"]) { return preferred }
+            return values.values.compactMap { displayString($0) }.first
+        }
+        return nil
     }
 
     nonisolated private static func fileSize(for url: URL) -> Int64? {
@@ -234,6 +312,12 @@ actor ImageMetadataLoader {
         let rounded = value.rounded()
         if abs(value - rounded) < 0.05 { return String(format: "%.0f mm", rounded) }
         return String(format: "%.1f mm", value)
+    }
+
+    nonisolated private static func formattedISO(_ value: Double) -> String {
+        let rounded = value.rounded()
+        if abs(value - rounded) < 0.05 { return String(format: "%.0f", rounded) }
+        return String(format: "%.1f", value)
     }
 
     nonisolated private static func string(_ value: Any?) -> String? {
