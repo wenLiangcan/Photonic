@@ -192,12 +192,30 @@ struct PhotoViewer: View {
                     ImageCanvas(
                         item: item,
                         rotationDegrees: Double(viewer.rotationQuarterTurns * 90),
-                        zoomCommand: viewer.zoomCommand
+                        zoomCommand: viewer.zoomCommand,
+                        onSingleClick: {
+                            viewer.presentOpenPanel(selectingComparison: true, comparisonSide: .primary)
+                        }
                     )
-                    .overlay(alignment: .topLeading) { ComparisonLabel("A", name: item.fileName) }
+                    .overlay(alignment: .topLeading) {
+                        ComparisonLabel("A", name: item.fileName) {
+                            viewer.presentOpenPanel(selectingComparison: true, comparisonSide: .primary)
+                        }
+                    }
 
-                    ImageCanvas(item: comparison, rotationDegrees: 0, zoomCommand: viewer.zoomCommand)
-                        .overlay(alignment: .topLeading) { ComparisonLabel("B", name: comparison.fileName) }
+                    ImageCanvas(
+                        item: comparison,
+                        rotationDegrees: 0,
+                        zoomCommand: viewer.zoomCommand,
+                        onSingleClick: {
+                            viewer.presentOpenPanel(selectingComparison: true, comparisonSide: .secondary)
+                        }
+                    )
+                    .overlay(alignment: .topLeading) {
+                        ComparisonLabel("B", name: comparison.fileName) {
+                            viewer.presentOpenPanel(selectingComparison: true, comparisonSide: .secondary)
+                        }
+                    }
                 }
                 .background(.black.opacity(0.28))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -913,24 +931,33 @@ private struct NavigationButton: View {
 private struct ComparisonLabel: View {
     let letter: String
     let name: String
+    let action: () -> Void
 
-    init(_ letter: String, name: String) {
+    init(_ letter: String, name: String, action: @escaping () -> Void) {
         self.letter = letter
         self.name = name
+        self.action = action
     }
 
     var body: some View {
-        HStack(spacing: 7) {
-            Text(letter)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .frame(width: 20, height: 20)
-                .background(.white.opacity(0.16), in: Circle())
-            Text(name).lineLimit(1)
+        Button(action: action) {
+            HStack(spacing: 7) {
+                Text(letter)
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .frame(width: 20, height: 20)
+                    .background(.white.opacity(0.16), in: Circle())
+                Text(name).lineLimit(1)
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.48))
+            }
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(.white.opacity(0.74))
+            .padding(9)
+            .background(.black.opacity(0.34), in: RoundedRectangle(cornerRadius: 8))
         }
-        .font(.system(size: 10.5, weight: .medium))
-        .foregroundStyle(.white.opacity(0.74))
-        .padding(9)
-        .background(.black.opacity(0.34), in: RoundedRectangle(cornerRadius: 8))
+        .buttonStyle(.plain)
+        .help("Choose a new image for side \(letter)")
         .padding(12)
     }
 }

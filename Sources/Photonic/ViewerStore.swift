@@ -9,6 +9,11 @@ struct ViewerItem: Identifiable, Hashable, Sendable {
     var fileName: String { url.lastPathComponent }
 }
 
+enum ComparisonSide: String, Sendable {
+    case primary = "A"
+    case secondary = "B"
+}
+
 enum ViewerMode: String, Sendable {
     case single
     case waterfall
@@ -100,15 +105,20 @@ final class ViewerStore: ObservableObject {
         return "\(currentIndex + 1) of \(items.count)"
     }
 
-    func presentOpenPanel(selectingComparison: Bool = false) {
+    func presentOpenPanel(
+        selectingComparison: Bool = false,
+        comparisonSide: ComparisonSide = .secondary
+    ) {
         if let openPanel {
             openPanel.makeKeyAndOrderFront(nil)
             return
         }
 
         let panel = NSOpenPanel()
-        panel.title = selectingComparison ? "Choose an image to compare" : "Open an image or folder"
-        panel.prompt = selectingComparison ? "Compare" : "Open"
+        panel.title = selectingComparison
+            ? "Choose an image for side \(comparisonSide.rawValue)"
+            : "Open an image or folder"
+        panel.prompt = selectingComparison ? "Choose" : "Open"
         var allowedContentTypes: [UTType] = [.image]
         if let hifType = UTType(filenameExtension: "hif") {
             allowedContentTypes.append(hifType)
@@ -121,8 +131,9 @@ final class ViewerStore: ObservableObject {
         panel.canChooseDirectories = !selectingComparison
         panel.allowsMultipleSelection = !selectingComparison
         panel.resolvesAliases = true
-        if selectingComparison, let currentItem {
-            panel.directoryURL = currentItem.url.deletingLastPathComponent()
+        if selectingComparison {
+            let referenceItem = comparisonSide == .primary ? currentItem : comparisonItem ?? currentItem
+            panel.directoryURL = referenceItem?.url.deletingLastPathComponent()
         }
 
         openPanel = panel
@@ -134,8 +145,15 @@ final class ViewerStore: ObservableObject {
             guard response == .OK, let panel else { return }
 
             if selectingComparison, let url = panel.url {
-                self.comparisonItem = ViewerItem(url: url.standardizedFileURL)
+                let selected = url.standardizedFileURL
+                if comparisonSide == .primary {
+                    self.replacePrimaryComparisonItem(with: selected)
+                } else {
+                    self.comparisonItem = ViewerItem(url: selected)
+                }
                 self.isComparing = true
+                self.stopSlideshow()
+                self.focusViewerWindow()
             } else {
                 self.open(urls: panel.urls)
             }
@@ -331,6 +349,13 @@ final class ViewerStore: ObservableObject {
     private func resetViewState() {
         rotationQuarterTurns = 0
         zoomCommand = ZoomCommand(action: .reset)
+    }
+
+    private func replacePrimaryComparisonItem(with selected: URL) {
+        let availableItems = siblingImages(around: selected).map(ViewerItem.init)
+        items = availableItems
+        currentIndex = availableItems.firstIndex { $0.url == selected } ?? 0
+        resetViewState()
     }
 
     private func dismissOpenPanel() {
