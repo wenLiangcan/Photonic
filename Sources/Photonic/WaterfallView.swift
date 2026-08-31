@@ -57,8 +57,10 @@ struct WaterfallView: View {
                 }
                 .scrollIndicators(.visible)
                 .onChange(of: proxy.size) { _, _ in
-                    revealCurrentImage(using: scrollProxy)
-                    scheduleThumbnailLoading(at: desiredThumbnailPixelSize)
+                    scheduleResizeSettling(
+                        at: desiredThumbnailPixelSize,
+                        using: scrollProxy
+                    )
                 }
                 .onChange(of: viewer.waterfallImageSize) { _, _ in
                     if !isSizeAdjustmentActive {
@@ -123,6 +125,21 @@ struct WaterfallView: View {
             guard !Task.isCancelled else { return }
             settledThumbnailPixelSize = pixelSize
             isResizing = false
+        }
+    }
+
+    private func scheduleResizeSettling(
+        at pixelSize: Int,
+        using scrollProxy: ScrollViewProxy
+    ) {
+        isResizing = true
+        resizeSettlingTask?.cancel()
+        resizeSettlingTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            settledThumbnailPixelSize = pixelSize
+            isResizing = false
+            revealCurrentImage(using: scrollProxy)
         }
     }
 }

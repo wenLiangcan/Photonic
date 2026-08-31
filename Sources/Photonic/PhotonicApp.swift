@@ -202,9 +202,8 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
             if event.type == .leftMouseDown {
                 let contentHeight = window.contentView?.bounds.height ?? window.frame.height
                 let isInHeader = event.locationInWindow.y >= contentHeight - 48
-                if isInHeader, event.clickCount == 2,
-                   let screen = window.screen ?? NSScreen.main {
-                    window.setFrame(screen.visibleFrame, display: true, animate: true)
+                if isInHeader, event.clickCount == 2 {
+                    window.toggleDesktopZoom()
                     return nil
                 }
                 return event
@@ -581,6 +580,8 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
 }
 
 final class ViewerOverlayWindow: NSWindow {
+    private var backgroundEffectResumeTask: Task<Void, Never>?
+
     init(contentRect: NSRect) {
         super.init(
             contentRect: contentRect,
@@ -610,6 +611,17 @@ final class ViewerOverlayWindow: NSWindow {
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    func toggleDesktopZoom() {
+        backgroundEffectResumeTask?.cancel()
+        (contentView as? OverlayRootView)?.setBackgroundEffectActive(false)
+        performZoom(nil)
+        backgroundEffectResumeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(420))
+            guard !Task.isCancelled else { return }
+            (self?.contentView as? OverlayRootView)?.setBackgroundEffectActive(true)
+        }
+    }
 }
 
 final class OverlayRootView: NSView {
@@ -635,6 +647,20 @@ final class OverlayRootView: NSView {
     }
 
     override var isOpaque: Bool { false }
+
+    override func viewWillStartLiveResize() {
+        super.viewWillStartLiveResize()
+        setBackgroundEffectActive(false)
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        setBackgroundEffectActive(true)
+    }
+
+    func setBackgroundEffectActive(_ active: Bool) {
+        desktopBlur.state = active ? .active : .inactive
+    }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }

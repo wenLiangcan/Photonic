@@ -876,8 +876,7 @@ private final class WindowDragView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 {
-            guard let window, let screen = window.screen ?? NSScreen.main else { return }
-            window.setFrame(screen.visibleFrame, display: true, animate: true)
+            (window as? ViewerOverlayWindow)?.toggleDesktopZoom()
             return
         }
         window?.performDrag(with: event)
