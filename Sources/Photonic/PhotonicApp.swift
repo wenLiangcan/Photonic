@@ -581,6 +581,12 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
 
 final class ViewerOverlayWindow: NSWindow {
     private var backgroundEffectResumeTask: Task<Void, Never>?
+    private static let resizeFallbackColor = NSColor(
+        calibratedRed: 0.105,
+        green: 0.11,
+        blue: 0.125,
+        alpha: 1
+    )
 
     init(contentRect: NSRect) {
         super.init(
@@ -613,14 +619,32 @@ final class ViewerOverlayWindow: NSWindow {
     override var canBecomeMain: Bool { true }
 
     func toggleDesktopZoom() {
-        backgroundEffectResumeTask?.cancel()
-        (contentView as? OverlayRootView)?.setBackgroundEffectActive(false)
-        performZoom(nil)
-        backgroundEffectResumeTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(420))
-            guard !Task.isCancelled else { return }
-            (self?.contentView as? OverlayRootView)?.setBackgroundEffectActive(true)
+        setResizePerformanceMode(true)
+        displayIfNeeded()
+
+        // Give WindowServer one turn to replace the behind-window material
+        // before native zoom starts. On macOS 15, changing the effect and
+        // resizing in the same transaction can keep the expensive blur path
+        // alive for every animation frame.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.performZoom(nil)
+            self.backgroundEffectResumeTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(650))
+                guard !Task.isCancelled else { return }
+                self?.setResizePerformanceMode(false)
+            }
         }
+    }
+
+    func setResizePerformanceMode(_ enabled: Bool) {
+        if enabled {
+            backgroundEffectResumeTask?.cancel()
+            backgroundEffectResumeTask = nil
+        }
+        (contentView as? OverlayRootView)?.setBackgroundEffectActive(!enabled)
+        isOpaque = enabled
+        backgroundColor = enabled ? Self.resizeFallbackColor : .clear
     }
 }
 
@@ -650,16 +674,29 @@ final class OverlayRootView: NSView {
 
     override func viewWillStartLiveResize() {
         super.viewWillStartLiveResize()
-        setBackgroundEffectActive(false)
+        (window as? ViewerOverlayWindow)?.setResizePerformanceMode(true)
     }
 
     override func viewDidEndLiveResize() {
         super.viewDidEndLiveResize()
-        setBackgroundEffectActive(true)
+        (window as? ViewerOverlayWindow)?.setResizePerformanceMode(false)
     }
 
     func setBackgroundEffectActive(_ active: Bool) {
-        desktopBlur.state = active ? .active : .inactive
+        if active {
+            desktopBlur.isHidden = false
+            desktopBlur.state = .active
+            layer?.backgroundColor = NSColor.clear.cgColor
+        } else {
+            desktopBlur.state = .inactive
+            desktopBlur.isHidden = true
+            layer?.backgroundColor = NSColor(
+                calibratedRed: 0.105,
+                green: 0.11,
+                blue: 0.125,
+                alpha: 1
+            ).cgColor
+        }
     }
 
     @available(*, unavailable)
