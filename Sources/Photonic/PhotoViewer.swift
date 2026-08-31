@@ -5,6 +5,8 @@ struct PhotoViewer: View {
     @EnvironmentObject private var viewer: ViewerStore
     @State private var controlsVisible = true
     @State private var hideControlsTask: Task<Void, Never>?
+    @State private var isPointerInsideWindow = false
+    @State private var isCursorHidden = false
     @State private var isWaterfallSizeAdjusting = false
     @State private var isInspectorVisible = false
     @FocusState private var viewerHasFocus: Bool
@@ -97,8 +99,11 @@ struct PhotoViewer: View {
         .onContinuousHover { phase in
             switch phase {
             case .active:
+                isPointerInsideWindow = true
                 revealControls()
             case .ended:
+                isPointerInsideWindow = false
+                revealCursorIfNeeded()
                 scheduleControlHide()
             }
         }
@@ -113,7 +118,13 @@ struct PhotoViewer: View {
         .onChange(of: viewer.isComparing) { _, comparing in
             if comparing { isInspectorVisible = false }
         }
-        .onDisappear { hideControlsTask?.cancel() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            revealCursorIfNeeded()
+        }
+        .onDisappear {
+            hideControlsTask?.cancel()
+            revealCursorIfNeeded()
+        }
         .focusable()
         .focused($viewerHasFocus)
         .focusEffectDisabled()
@@ -165,8 +176,21 @@ struct PhotoViewer: View {
 
     private func revealControls() {
         hideControlsTask?.cancel()
+        revealCursorIfNeeded()
         controlsVisible = true
         scheduleControlHide()
+    }
+
+    private func revealCursorIfNeeded() {
+        guard isCursorHidden else { return }
+        NSCursor.unhide()
+        isCursorHidden = false
+    }
+
+    private func hideCursorIfNeeded() {
+        guard isPointerInsideWindow, !isCursorHidden else { return }
+        NSCursor.hide()
+        isCursorHidden = true
     }
 
     private func requestViewerFocus() {
@@ -179,6 +203,7 @@ struct PhotoViewer: View {
             try? await Task.sleep(for: .seconds(1.8))
             guard !Task.isCancelled else { return }
             controlsVisible = false
+            hideCursorIfNeeded()
         }
     }
 
