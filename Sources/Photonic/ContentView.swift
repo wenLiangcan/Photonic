@@ -12,14 +12,14 @@ struct ContentView: View {
 
             if viewer.currentItem != nil {
                 PhotoViewer()
-                    .transition(.opacity.combined(with: .scale(scale: 0.985)))
+                    .transition(.opacity)
             } else {
                 EmptyViewer()
                     .transition(.opacity)
             }
         }
         .preferredColorScheme(.dark)
-        .animation(.easeOut(duration: 0.22), value: viewer.currentItem?.id)
+        .animation(.easeOut(duration: 0.14), value: viewer.currentItem != nil)
     }
 }
 

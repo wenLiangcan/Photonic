@@ -103,7 +103,11 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
 
     private func showViewerWindow() {
         if let viewerWindow {
-            viewerWindow.makeKeyAndOrderFront(nil)
+            if viewerWindow.isVisible {
+                viewerWindow.makeKeyAndOrderFront(nil)
+            } else {
+                viewerWindow.makeKeyAndOrderFrontOptimized()
+            }
             return
         }
 
@@ -127,7 +131,7 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
         ])
 
         window.contentView = overlayRoot
-        window.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFrontOptimized()
         viewerWindow = window
     }
 
@@ -629,12 +633,15 @@ final class ViewerOverlayWindow: NSWindow {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.performZoom(nil)
-            self.backgroundEffectResumeTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(650))
-                guard !Task.isCancelled else { return }
-                self?.setResizePerformanceMode(false)
-            }
+            self.scheduleBackgroundEffectRestore()
         }
+    }
+
+    func makeKeyAndOrderFrontOptimized() {
+        setResizePerformanceMode(true)
+        displayIfNeeded()
+        makeKeyAndOrderFront(nil)
+        scheduleBackgroundEffectRestore()
     }
 
     func setResizePerformanceMode(_ enabled: Bool) {
@@ -645,6 +652,15 @@ final class ViewerOverlayWindow: NSWindow {
         (contentView as? OverlayRootView)?.setBackgroundEffectActive(!enabled)
         isOpaque = enabled
         backgroundColor = enabled ? Self.resizeFallbackColor : .clear
+    }
+
+    private func scheduleBackgroundEffectRestore() {
+        backgroundEffectResumeTask?.cancel()
+        backgroundEffectResumeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(650))
+            guard !Task.isCancelled else { return }
+            self?.setResizePerformanceMode(false)
+        }
     }
 }
 
