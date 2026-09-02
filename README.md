@@ -6,6 +6,8 @@ A lightweight, native macOS image viewer. There is no library, catalog, import, 
 
 Download the latest macOS disk image from the [Photonic website](https://wenliangcan.github.io/Photonic/) or [GitHub Releases](https://github.com/wenLiangcan/Photonic/releases/latest).
 
+Photonic requires an Apple silicon Mac and macOS 14 or later.
+
 ## First launch
 
 After dragging Photonic into the Applications folder, macOS quarantine must be removed before the app can start. If you downloaded Photonic from the official links above, open Terminal and run:
@@ -58,7 +60,7 @@ To publish a release:
 2. Create a matching tag such as `v0.1.0`.
 3. Push the commit and tag to GitHub.
 
-The release workflow builds a universal Apple silicon/Intel app, packages `Photonic-<version>.dmg`, verifies its version and architectures, creates a checksum, and publishes both files to GitHub Releases. Run `scripts/create-dmg.sh` to test the same packaging flow locally.
+The release workflow builds an ARM64 Apple silicon app, packages `Photonic-<version>.dmg`, verifies its version and architecture, creates a checksum, and publishes both files to GitHub Releases. Run `scripts/create-dmg.sh` to test the same packaging flow locally.
 
 ### App icon
 

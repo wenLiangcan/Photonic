@@ -33,10 +33,10 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Build universal DMG
+      - name: Build Apple silicon DMG
         env:
           BUILD_NUMBER: ${{ github.run_number }}
-          SWIFT_BUILD_FLAGS: --arch arm64 --arch x86_64
+          SWIFT_BUILD_FLAGS: --arch arm64
         run: scripts/create-dmg.sh
 
       - name: Verify bundle and disk image versions
@@ -48,7 +48,7 @@ jobs:
           test "$bundle_version" = "$version"
           test -f "dist/Photonic-$version.dmg"
           test -f "dist/Photonic-$version.dmg.sha256"
-          lipo .build/Photonic.app/Contents/MacOS/Photonic -verify_arch arm64 x86_64
+          test "$(lipo -archs .build/Photonic.app/Contents/MacOS/Photonic)" = "arm64"
           (cd dist && shasum -a 256 -c "Photonic-$version.dmg.sha256")
 
       - name: Publish GitHub release

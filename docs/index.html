@@ -251,10 +251,10 @@
           const dmg = release.assets.find(asset => asset.name.endsWith(".dmg"));
           if (dmg) download.href = dmg.browser_download_url;
           const version = release.tag_name.replace(/^v/, "");
-          status.textContent = `Version ${version} · macOS 14 or later`;
+          status.textContent = `Version ${version} · Apple silicon · macOS 14 or later`;
         })
         .catch(() => {
-          status.textContent = "Latest release · macOS 14 or later";
+          status.textContent = "Latest release · Apple silicon · macOS 14 or later";
         });
     </script>
   </body>
