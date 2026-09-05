@@ -646,9 +646,9 @@ private struct TopChrome: View {
     var body: some View {
         HStack(spacing: 12) {
             Button { performWidgetAction { NSApp.keyWindow?.close() } } label: { Image(systemName: "xmark") }
-                .help("Close window")
+                .photonicTooltip("Close window", placement: .below)
             Button { performWidgetAction { viewer.presentOpenPanel() } } label: { Image(systemName: "folder") }
-                .help("Open image")
+                .photonicTooltip("Open image", placement: .below)
 
             Spacer()
 
@@ -667,9 +667,9 @@ private struct TopChrome: View {
             Button { performWidgetAction { NSApp.keyWindow?.toggleFullScreen(nil) } } label: {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
             }
-            .help("Toggle full screen (F)")
+            .photonicTooltip("Toggle full screen (F)", placement: .below)
             Button { performWidgetAction(viewer.revealInFinder) } label: { Image(systemName: "arrow.right.circle") }
-                .help("Reveal in Finder")
+                .photonicTooltip("Reveal in Finder", placement: .below)
         }
         .buttonStyle(ChromeButtonStyle())
         .foregroundStyle(.white.opacity(0.84))
@@ -787,7 +787,7 @@ private struct WaterfallSizeControl: View {
                 .controlSize(.small)
                 .tint(PhotonicTheme.accent)
                 .frame(width: 150)
-                .help("Image size")
+                .photonicTooltip("Image size")
             Image(systemName: "photo")
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.white.opacity(0.72))
@@ -1100,7 +1100,7 @@ private struct DockButton: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(active ? PhotonicTheme.accent : .white.opacity(0.78))
-        .help(help)
+        .photonicTooltip(help)
     }
 }
 
@@ -1162,7 +1162,7 @@ private struct ComparisonLabel: View {
             .background(.black.opacity(0.34), in: RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
-        .help("Choose a new image for side \(letter)")
+        .photonicTooltip("Choose a new image for side \(letter)", placement: .below)
         .padding(12)
     }
 }

@@ -51,7 +51,7 @@ struct PhotoInspectorSidebar: View {
                     }
                     .buttonStyle(.plain)
                     .background(.white.opacity(0.09), in: Circle())
-                    .help("Close photo info")
+                    .photonicTooltip("Close photo info", placement: .below)
                 }
 
                 Text(item.fileName)
@@ -121,7 +121,7 @@ struct PhotoInspectorSidebar: View {
                                                 .contentShape(Circle().inset(by: -5))
                                         }
                                         .buttonStyle(.plain)
-                                        .help("Photo info page \(pageIndex + 1) of \(pages.count)")
+                                        .photonicTooltip("Photo info page \(pageIndex + 1) of \(pages.count)")
                                     }
                                 }
                                 .frame(height: 10)

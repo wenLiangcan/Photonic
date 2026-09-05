@@ -76,7 +76,7 @@ private struct EmptyViewer: View {
             .focusable(false)
             .focusEffectDisabled()
             .foregroundStyle(.white.opacity(0.82))
-            .help("Close window")
+            .photonicTooltip("Close window", placement: .below)
             .padding(18)
         }
     }

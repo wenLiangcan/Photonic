@@ -206,7 +206,7 @@ private struct WaterfallPhotoTile: View {
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.16)) { isHovering = hovering }
         }
-        .help(item.fileName)
+        .photonicTooltip(item.fileName)
         .accessibilityLabel(item.fileName)
         .task(id: ThumbnailRequest(
             itemID: item.id,
