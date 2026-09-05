@@ -8,6 +8,15 @@ Download the latest macOS disk image from the [Photonic website](https://wenlian
 
 Photonic requires an Apple silicon Mac and macOS 14 or later.
 
+### Install with Homebrew
+
+```bash
+brew tap wenliangcan/photonic
+brew install --cask photonic
+```
+
+The Cask is maintained in the [Photonic Homebrew tap](https://github.com/wenLiangcan/homebrew-photonic) and follows the latest published release.
+
 ## First launch
 
 After dragging Photonic into the Applications folder, macOS quarantine must be removed before the app can start. If you downloaded Photonic from the official links above, open Terminal and run:
