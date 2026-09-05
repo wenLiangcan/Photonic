@@ -76,6 +76,7 @@ final class ViewerStore: ObservableObject {
     @Published var currentIndex = 0
     @Published var comparisonItem: ViewerItem?
     @Published var isComparing = false
+    @Published private(set) var isComparisonSwapped = false
     @Published var isSlideshowRunning = false
     @Published var rotationQuarterTurns = 0
     @Published var zoomCommand: ZoomCommand?
@@ -180,6 +181,7 @@ final class ViewerStore: ObservableObject {
         currentIndex = items.firstIndex { $0.url == selected } ?? 0
         comparisonItem = nil
         isComparing = false
+        isComparisonSwapped = false
         isShortcutReferenceVisible = false
         navigationLoopFeedback = nil
         slideshowFeedback = nil
@@ -197,6 +199,7 @@ final class ViewerStore: ObservableObject {
         currentIndex = 0
         comparisonItem = nil
         isComparing = false
+        isComparisonSwapped = false
         viewMode = .single
         isShortcutReferenceVisible = false
         navigationLoopFeedback = nil
@@ -335,6 +338,11 @@ final class ViewerStore: ObservableObject {
         } else {
             presentOpenPanel(selectingComparison: true)
         }
+    }
+
+    func swapComparisonSides() {
+        guard isComparing, comparisonItem != nil else { return }
+        isComparisonSwapped.toggle()
     }
 
     func requestZoom(_ action: ZoomAction) {

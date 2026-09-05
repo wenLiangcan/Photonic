@@ -214,32 +214,20 @@ struct PhotoViewer: View {
         } else if let item = viewer.currentItem {
             if viewer.isComparing, let comparison = viewer.comparisonItem {
                 HStack(spacing: 1) {
-                    ImageCanvas(
-                        item: item,
-                        rotationDegrees: Double(viewer.rotationQuarterTurns * 90),
-                        zoomCommand: viewer.zoomCommand,
-                        onSingleClick: {
-                            viewer.presentOpenPanel(selectingComparison: true, comparisonSide: .primary)
-                        }
-                    )
-                    .overlay(alignment: .topLeading) {
-                        ComparisonLabel("A", name: item.fileName) {
-                            viewer.presentOpenPanel(selectingComparison: true, comparisonSide: .primary)
-                        }
-                    }
-
-                    ImageCanvas(
-                        item: comparison,
-                        rotationDegrees: 0,
-                        zoomCommand: viewer.zoomCommand,
-                        onSingleClick: {
-                            viewer.presentOpenPanel(selectingComparison: true, comparisonSide: .secondary)
-                        }
-                    )
-                    .overlay(alignment: .topLeading) {
-                        ComparisonLabel("B", name: comparison.fileName) {
-                            viewer.presentOpenPanel(selectingComparison: true, comparisonSide: .secondary)
-                        }
+                    if viewer.isComparisonSwapped {
+                        comparisonPane(item: comparison, side: .secondary, rotationDegrees: 0)
+                        comparisonPane(
+                            item: item,
+                            side: .primary,
+                            rotationDegrees: Double(viewer.rotationQuarterTurns * 90)
+                        )
+                    } else {
+                        comparisonPane(
+                            item: item,
+                            side: .primary,
+                            rotationDegrees: Double(viewer.rotationQuarterTurns * 90)
+                        )
+                        comparisonPane(item: comparison, side: .secondary, rotationDegrees: 0)
                     }
                 }
                 .background(.black.opacity(0.28))
@@ -252,6 +240,26 @@ struct PhotoViewer: View {
                     zoomCommand: viewer.zoomCommand,
                     onSingleClick: { isInspectorVisible.toggle() }
                 )
+            }
+        }
+    }
+
+    private func comparisonPane(
+        item: ViewerItem,
+        side: ComparisonSide,
+        rotationDegrees: Double
+    ) -> some View {
+        ImageCanvas(
+            item: item,
+            rotationDegrees: rotationDegrees,
+            zoomCommand: viewer.zoomCommand,
+            onSingleClick: {
+                viewer.presentOpenPanel(selectingComparison: true, comparisonSide: side)
+            }
+        )
+        .overlay(alignment: .topLeading) {
+            ComparisonLabel(side.rawValue, name: item.fileName) {
+                viewer.presentOpenPanel(selectingComparison: true, comparisonSide: side)
             }
         }
     }
@@ -566,6 +574,14 @@ private struct FloatingDock: View {
                 DockDivider()
                 DockButton(icon: "rectangle.split.2x1", help: "Compare side by side", active: viewer.isComparing) {
                     viewer.toggleComparison()
+                }
+                if viewer.isComparing {
+                    DockButton(
+                        icon: "arrow.left.arrow.right",
+                        help: "Swap comparison positions",
+                        action: viewer.swapComparisonSides
+                    )
+                    .transition(.scale.combined(with: .opacity))
                 }
             }
         }
