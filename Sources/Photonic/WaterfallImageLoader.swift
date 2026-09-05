@@ -7,16 +7,17 @@ actor WaterfallImageLoader {
 
     private let thumbnailCache = NSCache<NSString, CGImage>()
     private var aspectRatioCache: [String: CGFloat] = [:]
-    private var nextDeliveryTime = 0.0
-    private let deliveryInterval = 1.0 / 60.0
+    private let deliveryClock = ContinuousClock()
+    private var nextDeliveryTime: ContinuousClock.Instant?
 
-    private init() {
+    init() {
         thumbnailCache.countLimit = 240
         thumbnailCache.totalCostLimit = 160 * 1024 * 1024
     }
 
     func aspectRatios(for items: [ViewerItem]) async -> [String: CGFloat] {
-        var result = aspectRatioCache.filter { key, _ in items.contains { $0.id == key } }
+        let itemIDs = Set(items.map(\.id))
+        var result = aspectRatioCache.filter { key, _ in itemIDs.contains(key) }
         let missingItems = items.filter { result[$0.id] == nil }
 
         for item in missingItems {
@@ -50,12 +51,18 @@ actor WaterfallImageLoader {
     }
 
     private func waitForDeliverySlot() async {
-        let now = Date.timeIntervalSinceReferenceDate
-        let scheduledTime = max(now, nextDeliveryTime)
-        nextDeliveryTime = scheduledTime + deliveryInterval
-        let delay = scheduledTime - now
-        guard delay > 0 else { return }
-        try? await Task.sleep(for: .seconds(delay))
+        // Claim only the slot actually used. Canceled offscreen requests must
+        // not reserve seconds of future delivery time ahead of visible photos.
+        while !Task.isCancelled {
+            let now = deliveryClock.now
+            if let nextDeliveryTime, nextDeliveryTime > now {
+                do { try await deliveryClock.sleep(until: nextDeliveryTime) }
+                catch { return }
+                continue
+            }
+            nextDeliveryTime = now.advanced(by: .milliseconds(16))
+            return
+        }
     }
 
     nonisolated private static func readAspectRatio(from url: URL) -> CGFloat {

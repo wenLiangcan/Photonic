@@ -8,6 +8,7 @@ struct WaterfallView: View {
     @Environment(\.displayScale) private var displayScale
     @State private var aspectRatios: [String: CGFloat] = [:]
     @State private var revealScheduled = false
+    @State private var canvasMinY: CGFloat = 0
     @State private var settledThumbnailPixelSize: Int?
     @State private var isResizing = false
     @State private var resizeSettlingTask: Task<Void, Never>?
@@ -31,26 +32,29 @@ struct WaterfallView: View {
                 let thumbnailPixelSize = settledThumbnailPixelSize ?? desiredThumbnailPixelSize
 
                 ScrollView(.vertical) {
-                    HStack(alignment: .top, spacing: spacing) {
-                        ForEach(layout.columns.indices, id: \.self) { column in
-                            LazyVStack(spacing: spacing) {
-                                ForEach(layout.columns[column]) { tile in
-                                    WaterfallPhotoTile(
-                                        item: tile.item,
-                                        selected: tile.item == viewer.currentItem,
-                                        size: CGSize(width: layout.itemWidth, height: tile.height),
-                                        maxPixelSize: thumbnailPixelSize,
-                                        loadingEnabled: !isResizing && !isSizeAdjustmentActive
-                                    ) {
-                                        viewer.showInSingleView(tile.item)
+                    WaterfallPositionedLayout(frames: layout.tiles.map(\.frame), size: layout.contentSize) {
+                        ForEach(layout.tiles) { tile in
+                            Color.clear
+                                .frame(width: tile.frame.width, height: tile.frame.height)
+                                .overlay {
+                                    if layout.isVisible(tile, canvasMinY: canvasMinY, viewportHeight: proxy.size.height) {
+                                        WaterfallPhotoTile(
+                                            item: tile.item,
+                                            selected: tile.item == viewer.currentItem,
+                                            size: tile.frame.size,
+                                            maxPixelSize: thumbnailPixelSize,
+                                            loadingEnabled: !isResizing && !isSizeAdjustmentActive
+                                        ) {
+                                            viewer.showInSingleView(tile.item)
+                                        }
                                     }
-                                    .id(tile.item.id)
                                 }
-                            }
-                            .frame(width: layout.itemWidth)
+                                .id(tile.item.id)
                         }
                     }
-                    .frame(width: availableWidth, alignment: .top)
+                    .background {
+                        WaterfallViewportObserver { canvasMinY = $0 }
+                    }
                     .padding(.horizontal, horizontalPadding)
                     .padding(.top, 64)
                     .padding(.bottom, 104)
@@ -144,6 +148,80 @@ struct WaterfallView: View {
     }
 }
 
+private struct WaterfallViewportObserver: NSViewRepresentable {
+    let onChange: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> WaterfallViewportView {
+        let view = WaterfallViewportView()
+        view.onChange = onChange
+        return view
+    }
+
+    func updateNSView(_ view: WaterfallViewportView, context: Context) { view.onChange = onChange }
+}
+
+/// Observe AppKit's clip bounds directly: a SwiftUI geometry preference can
+/// remain unchanged when NSScrollView moves its native clip view on macOS.
+private final class WaterfallViewportView: NSView {
+    var onChange: ((CGFloat) -> Void)?
+    private var observer: NSObjectProtocol?
+    private var updateScheduled = false
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = nil
+        guard window != nil else { return }
+        DispatchQueue.main.async { [weak self] in self?.observeViewport() }
+    }
+
+    private func observeViewport() {
+        guard window != nil, observer == nil, let clip = enclosingScrollView?.contentView else { return }
+        clip.postsBoundsChangedNotifications = true
+        observer = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification, object: clip, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.scheduleUpdate() }
+        }
+        scheduleUpdate()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        scheduleUpdate()
+    }
+
+    private func scheduleUpdate() {
+        guard !updateScheduled else { return }
+        updateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.updateScheduled = false
+            guard self.window != nil, let clip = self.enclosingScrollView?.contentView else { return }
+            self.onChange?(-self.convert(clip.bounds, from: clip).minY)
+        }
+    }
+}
+
+/// Every scroll anchor has its final frame, including images never visited.
+/// Only viewport-adjacent anchors instantiate image views and decode tasks.
+private struct WaterfallPositionedLayout: Layout {
+    let frames: [CGRect]
+    let size: CGSize
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize { size }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, frames) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                          anchor: .topLeading,
+                          proposal: ProposedViewSize(width: frame.width, height: frame.height))
+        }
+    }
+}
+
 private struct WaterfallPhotoTile: View {
     let item: ViewerItem
     let selected: Bool
@@ -232,17 +310,26 @@ private struct ThumbnailRequest: Hashable {
 }
 
 @MainActor
-private struct WaterfallLayoutResult {
+struct WaterfallLayoutResult {
     struct Tile: Identifiable {
         let item: ViewerItem
         let height: CGFloat
         let centerY: CGFloat
+        let frame: CGRect
 
         var id: String { item.id }
     }
 
     let columns: [[Tile]]
     let itemWidth: CGFloat
+    let contentSize: CGSize
+    var tiles: [Tile] { columns.flatMap { $0 } }
+
+    func isVisible(_ tile: Tile, canvasMinY: CGFloat, viewportHeight: CGFloat) -> Bool {
+        let overscan = max(256, viewportHeight / 2)
+        return tile.frame.maxY >= -canvasMinY - overscan
+            && tile.frame.minY <= -canvasMinY + viewportHeight + overscan
+    }
 
     func destination(
         from currentItem: ViewerItem?,
@@ -284,6 +371,7 @@ private struct WaterfallLayoutResult {
         let columnCount = max(1, Int((availableWidth + spacing) / (requestedWidth + spacing)))
         var columnHeights = Array(repeating: CGFloat.zero, count: columnCount)
         var placedColumns = Array(repeating: [Tile](), count: columnCount)
+        let inset = max(0, (availableWidth - CGFloat(columnCount) * requestedWidth - CGFloat(columnCount - 1) * spacing) / 2)
 
         for item in items {
             let column = columnHeights.indices.min { columnHeights[$0] < columnHeights[$1] } ?? 0
@@ -292,12 +380,15 @@ private struct WaterfallLayoutResult {
             placedColumns[column].append(Tile(
                 item: item,
                 height: itemHeight,
-                centerY: columnHeights[column] + itemHeight / 2
+                centerY: columnHeights[column] + itemHeight / 2,
+                frame: CGRect(x: inset + CGFloat(column) * (requestedWidth + spacing),
+                              y: columnHeights[column], width: requestedWidth, height: itemHeight)
             ))
             columnHeights[column] += itemHeight + spacing
         }
 
         columns = placedColumns
         itemWidth = requestedWidth
+        contentSize = CGSize(width: availableWidth, height: max(0, (columnHeights.max() ?? 0) - spacing))
     }
 }

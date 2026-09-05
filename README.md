@@ -84,6 +84,18 @@ mouse-driver behavior still need manual checking.
 GitHub Actions runs the suite on pushes to `main` and pull requests. Releases also
 run it before packaging, so a failing test prevents publication.
 
+To include read-only reverse-order image decoding and thumbnail cancellation tests
+with the local 120-image fixture set:
+
+```bash
+PHOTONIC_TEST_IMAGES=/path/to/Photonic-Test-Images bash scripts/test.sh
+```
+
+The fixture test is skipped when this variable is absent; synthetic waterfall
+layout tests still run in CI. Waterfall uses fixed scroll-anchor frames and only
+instantiates thumbnails near the viewport, avoiding lazy-column height estimates
+when jumping to a late image and scrolling back to the beginning.
+
 ## Release
 
 `VERSION` is the single source of truth for the marketing version. The packaging script writes it into the app bundle, and the release workflow refuses to publish a tag that does not match it.
