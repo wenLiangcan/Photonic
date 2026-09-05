@@ -33,6 +33,9 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Run isolated interaction regression tests
+        run: bash scripts/test.sh
+
       - name: Build Apple silicon DMG
         env:
           BUILD_NUMBER: ${{ github.run_number }}

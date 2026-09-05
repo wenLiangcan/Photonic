@@ -223,29 +223,14 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
         ]) { [weak self] event in
             guard let self, let window = self.viewerWindow, event.window === window else { return event }
 
-            switch event.type {
-            case .leftMouseDown, .leftMouseDragged,
-                 .rightMouseDown, .rightMouseDragged,
-                 .otherMouseDown, .otherMouseDragged:
-                // Keep the dock alive throughout AppKit's button/slider
-                // tracking loop without changing SwiftUI view identity.
+            return ViewerInputRouter.route(event, interactionBegan: {
                 NotificationCenter.default.post(
                     name: .photonicPointerInteractionBegan,
                     object: window
                 )
-            case .mouseMoved, .scrollWheel,
-                 .leftMouseUp, .rightMouseUp, .otherMouseUp:
-                // Local monitors run before AppKit dispatches the event. Defer
-                // the SwiftUI state update so button tracking receives its full
-                // down/up sequence before the view tree can be invalidated.
-                DispatchQueue.main.async {
-                    NotificationCenter.default.post(name: .photonicPointerActivity, object: window)
-                }
-            default:
-                break
-            }
-
-            if event.type == .leftMouseDown {
+            }, pointerActivity: {
+                NotificationCenter.default.post(name: .photonicPointerActivity, object: window)
+            }, leftMouseDown: { event in
                 let contentHeight = window.contentView?.bounds.height ?? window.frame.height
                 let isInHeader = event.locationInWindow.y >= contentHeight - 48
                 if isInHeader, event.clickCount == 2 {
@@ -253,9 +238,7 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
                     return nil
                 }
                 return event
-            }
-
-            if event.type == .scrollWheel {
+            }, scrollWheel: { event in
                 guard self.viewer.viewMode == .single else { return event }
 
                 // The app-level image zoom monitor must not steal wheel events
@@ -291,148 +274,142 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
                 )
                 self.viewer.requestZoom(.continuous(delta: delta, anchor: anchor))
                 return nil
-            }
-
-            // Pointer activity is observed above, but its events must continue
-            // to AppKit unchanged. NSEvent's characters/keyCode accessors are
-            // only valid for key events; reading them for mouse-up interrupts
-            // dispatch before a button can complete its click.
-            guard event.type == .keyDown else { return event }
-
-            let shortcutModifiers = event.modifierFlags.intersection([.command, .control, .option])
-            let isQuestionMark = event.characters == "?" || (
-                event.charactersIgnoringModifiers == "/" && event.modifierFlags.contains(.shift)
-            )
-            if shortcutModifiers.isEmpty, isQuestionMark {
-                self.viewer.toggleShortcutReference()
-                return nil
-            }
-
-            if self.viewer.isShortcutReferenceVisible {
-                if event.keyCode == 53 { // Escape
-                    self.viewer.isShortcutReferenceVisible = false
+            }, keyDown: { event in
+                let shortcutModifiers = event.modifierFlags.intersection([.command, .control, .option])
+                let isQuestionMark = event.characters == "?" || (
+                    event.charactersIgnoringModifiers == "/" && event.modifierFlags.contains(.shift)
+                )
+                if shortcutModifiers.isEmpty, isQuestionMark {
+                    self.viewer.toggleShortcutReference()
                     return nil
                 }
+
+                if self.viewer.isShortcutReferenceVisible {
+                    if event.keyCode == 53 { // Escape
+                        self.viewer.isShortcutReferenceVisible = false
+                        return nil
+                    }
+                    let systemModifiers = event.modifierFlags.intersection([.command, .control, .option])
+                    return systemModifiers.isEmpty ? nil : event
+                }
+
+                // Arrow keys are tagged by AppKit with .function/.numericPad even
+                // when the user holds no modifiers. Only treat intentional shortcut
+                // modifiers as modifiers here.
+                let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
                 let systemModifiers = event.modifierFlags.intersection([.command, .control, .option])
-                return systemModifiers.isEmpty ? nil : event
-            }
-
-            // Arrow keys are tagged by AppKit with .function/.numericPad even
-            // when the user holds no modifiers. Only treat intentional shortcut
-            // modifiers as modifiers here.
-            let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
-            let systemModifiers = event.modifierFlags.intersection([.command, .control, .option])
-            if systemModifiers.isEmpty,
-               event.modifierFlags.contains(.shift),
-               self.viewer.currentItem != nil {
-                let character = event.characters
-                let characterIgnoringModifiers = event.charactersIgnoringModifiers
-                let isPlusKey = event.keyCode == 24 || event.keyCode == 69
-                    || character == "+" || characterIgnoringModifiers == "="
-                let isMinusKey = event.keyCode == 27 || event.keyCode == 78
-                    || character == "_" || characterIgnoringModifiers == "-"
-                if isPlusKey {
-                    self.viewer.increaseImageSize()
-                    return nil
+                if systemModifiers.isEmpty,
+                   event.modifierFlags.contains(.shift),
+                   self.viewer.currentItem != nil {
+                    let character = event.characters
+                    let characterIgnoringModifiers = event.charactersIgnoringModifiers
+                    let isPlusKey = event.keyCode == 24 || event.keyCode == 69
+                        || character == "+" || characterIgnoringModifiers == "="
+                    let isMinusKey = event.keyCode == 27 || event.keyCode == 78
+                        || character == "_" || characterIgnoringModifiers == "-"
+                    if isPlusKey {
+                        self.viewer.increaseImageSize()
+                        return nil
+                    }
+                    if isMinusKey {
+                        self.viewer.decreaseImageSize()
+                        return nil
+                    }
                 }
-                if isMinusKey {
-                    self.viewer.decreaseImageSize()
+                if modifiers.isEmpty,
+                   self.viewer.currentItem != nil,
+                   event.charactersIgnoringModifiers == "0" {
+                    self.viewer.resetRotation()
                     return nil
-                }
-            }
-            if modifiers.isEmpty,
-               self.viewer.currentItem != nil,
-               event.charactersIgnoringModifiers == "0" {
-                self.viewer.resetRotation()
-                return nil
-            }
-
-            if modifiers == .shift, self.viewer.viewMode == .waterfall {
-                switch event.charactersIgnoringModifiers?.lowercased() {
-                case "j":
-                    self.scrollWaterfall(in: window, direction: 1)
-                    return nil
-                case "k":
-                    self.scrollWaterfall(in: window, direction: -1)
-                    return nil
-                default:
-                    break
-                }
-            }
-
-            if modifiers.isEmpty {
-                switch event.charactersIgnoringModifiers?.lowercased() {
-                case "h" where self.viewer.viewMode == .waterfall:
-                    self.viewer.navigateWaterfall(.left)
-                    return nil
-                case "j":
-                    if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.down) }
-                    else { self.viewer.previous() }
-                    return nil
-                case "k":
-                    if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.up) }
-                    else { self.viewer.next() }
-                    return nil
-                case "l" where self.viewer.viewMode == .waterfall:
-                    self.viewer.navigateWaterfall(.right)
-                    return nil
-                case "f":
-                    self.toggleFullScreen()
-                    return nil
-                case "s" where self.viewer.currentItem != nil:
-                    self.viewer.setViewMode(.single)
-                    return nil
-                case "w" where self.viewer.currentItem != nil:
-                    self.viewer.setViewMode(.waterfall)
-                    return nil
-                default:
-                    break
                 }
 
-                switch event.keyCode {
-                case 53 where self.viewer.currentItem == nil: // Escape
-                    window.close()
-                    return nil
-                case 123: // Left arrow
-                    if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.left) }
-                    else { self.viewer.previous() }
-                    return nil
-                case 124: // Right arrow
-                    if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.right) }
-                    else { self.viewer.next() }
-                    return nil
-                case 126 where self.viewer.viewMode == .waterfall: // Up arrow
-                    self.viewer.navigateWaterfall(.up)
-                    return nil
-                case 116 where self.viewer.viewMode == .waterfall: // Page Up
-                    self.viewer.navigateWaterfall(.up)
-                    return nil
-                case 125 where self.viewer.viewMode == .waterfall: // Down arrow
-                    self.viewer.navigateWaterfall(.down)
-                    return nil
-                case 121 where self.viewer.viewMode == .waterfall: // Page Down
-                    self.viewer.navigateWaterfall(.down)
-                    return nil
-                case 116: // Page Up
-                    self.viewer.previous()
-                    return nil
-                case 121: // Page Down
-                    self.viewer.next()
-                    return nil
-                case 36 where self.viewer.viewMode == .waterfall: // Return
-                    self.viewer.openWaterfallSelection()
-                    return nil
-                case 76 where self.viewer.viewMode == .waterfall: // Keypad Enter
-                    self.viewer.openWaterfallSelection()
-                    return nil
-                case 49: // Space
-                    self.viewer.toggleSlideshow()
-                    return nil
-                default:
-                    break
+                if modifiers == .shift, self.viewer.viewMode == .waterfall {
+                    switch event.charactersIgnoringModifiers?.lowercased() {
+                    case "j":
+                        self.scrollWaterfall(in: window, direction: 1)
+                        return nil
+                    case "k":
+                        self.scrollWaterfall(in: window, direction: -1)
+                        return nil
+                    default:
+                        break
+                    }
                 }
-            }
-            return event
+
+                if modifiers.isEmpty {
+                    switch event.charactersIgnoringModifiers?.lowercased() {
+                    case "h" where self.viewer.viewMode == .waterfall:
+                        self.viewer.navigateWaterfall(.left)
+                        return nil
+                    case "j":
+                        if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.down) }
+                        else { self.viewer.previous() }
+                        return nil
+                    case "k":
+                        if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.up) }
+                        else { self.viewer.next() }
+                        return nil
+                    case "l" where self.viewer.viewMode == .waterfall:
+                        self.viewer.navigateWaterfall(.right)
+                        return nil
+                    case "f":
+                        self.toggleFullScreen()
+                        return nil
+                    case "s" where self.viewer.currentItem != nil:
+                        self.viewer.setViewMode(.single)
+                        return nil
+                    case "w" where self.viewer.currentItem != nil:
+                        self.viewer.setViewMode(.waterfall)
+                        return nil
+                    default:
+                        break
+                    }
+
+                    switch event.keyCode {
+                    case 53 where self.viewer.currentItem == nil: // Escape
+                        window.close()
+                        return nil
+                    case 123: // Left arrow
+                        if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.left) }
+                        else { self.viewer.previous() }
+                        return nil
+                    case 124: // Right arrow
+                        if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.right) }
+                        else { self.viewer.next() }
+                        return nil
+                    case 126 where self.viewer.viewMode == .waterfall: // Up arrow
+                        self.viewer.navigateWaterfall(.up)
+                        return nil
+                    case 116 where self.viewer.viewMode == .waterfall: // Page Up
+                        self.viewer.navigateWaterfall(.up)
+                        return nil
+                    case 125 where self.viewer.viewMode == .waterfall: // Down arrow
+                        self.viewer.navigateWaterfall(.down)
+                        return nil
+                    case 121 where self.viewer.viewMode == .waterfall: // Page Down
+                        self.viewer.navigateWaterfall(.down)
+                        return nil
+                    case 116: // Page Up
+                        self.viewer.previous()
+                        return nil
+                    case 121: // Page Down
+                        self.viewer.next()
+                        return nil
+                    case 36 where self.viewer.viewMode == .waterfall: // Return
+                        self.viewer.openWaterfallSelection()
+                        return nil
+                    case 76 where self.viewer.viewMode == .waterfall: // Keypad Enter
+                        self.viewer.openWaterfallSelection()
+                        return nil
+                    case 49: // Space
+                        self.viewer.toggleSlideshow()
+                        return nil
+                    default:
+                        break
+                    }
+                }
+                return event
+            })
         }
     }
 

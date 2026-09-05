@@ -12,6 +12,7 @@ let package = Package(
         .executableTarget(
             name: "Photonic",
             path: "Sources/Photonic"
-        )
+        ),
+        .testTarget(name: "PhotonicTests", dependencies: ["Photonic"])
     ]
 )

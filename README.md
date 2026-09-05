@@ -59,6 +59,31 @@ open ".build/Photonic.app"
 
 Supported formats include JPEG, PNG, HEIC/HEIF/HIF, GIF, TIFF, BMP, and WebP when supported by the installed macOS version.
 
+## Regression tests
+
+Run the automated interaction suite with Xcode's Swift toolchain:
+
+```bash
+bash scripts/test.sh
+```
+
+The runner uses a fresh temporary directory for build outputs and SwiftPM caches,
+configuration, and security files, then removes that directory on exit. It leaves
+the project's `.build`, packaged apps, installed app, and preferences alone. Tests
+do not launch Photonic, open windows or file pickers, post system input events,
+move the pointer, or hide the desktop cursor. Time, pointer position, window state,
+and cursor effects are simulated; AppKit events are constructed only in memory.
+
+The suite exercises the production event router and visibility controller: mouse
+down/up delivery, deferred activity updates, inactivity deadlines, continuous
+movement, held buttons, widget hover, slider tracking, file-picker suspension,
+window deactivation, cursor restoration, and hidden controls during keyboard
+navigation. These are component regression tests; visual layout and real hardware
+mouse-driver behavior still need manual checking.
+
+GitHub Actions runs the suite on pushes to `main` and pull requests. Releases also
+run it before packaging, so a failing test prevents publication.
+
 ## Release
 
 `VERSION` is the single source of truth for the marketing version. The packaging script writes it into the app bundle, and the release workflow refuses to publish a tag that does not match it.

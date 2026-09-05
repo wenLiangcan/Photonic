@@ -14,17 +14,63 @@ private func performWidgetAction(_ action: () -> Void) {
 }
 
 @MainActor
-private final class ControlVisibilityController: ObservableObject {
+final class ControlVisibilityController: ObservableObject {
+    struct WindowState {
+        var frame: CGRect
+        var isActive = true
+        var isKey = true
+        var isVisible = true
+        var hasSheet = false
+        var hasModal = false
+    }
+
+    // All desktop effects are injectable: regression tests use a virtual clock,
+    // pointer and window, and never hide the real cursor or create an NSWindow.
+    @MainActor
+    struct Environment {
+        var now: @MainActor () -> TimeInterval
+        var pointerLocation: @MainActor () -> CGPoint
+        var pressedButtons: @MainActor () -> Int
+        var window: @MainActor () -> WindowState?
+        var hideCursor: @MainActor () -> Void
+        var unhideCursor: @MainActor () -> Void
+        var schedulesTimer: Bool
+
+        static var live: Self {
+            Self(
+                now: { ProcessInfo.processInfo.systemUptime },
+                pointerLocation: { NSEvent.mouseLocation },
+                pressedButtons: { NSEvent.pressedMouseButtons },
+                window: {
+                    guard let window = NSApp.windows.first(where: { $0 is ViewerOverlayWindow }) else { return nil }
+                    return WindowState(
+                        frame: window.frame, isActive: NSApp.isActive,
+                        isKey: window.isKeyWindow, isVisible: window.isVisible,
+                        hasSheet: window.attachedSheet != nil, hasModal: NSApp.modalWindow != nil
+                    )
+                },
+                hideCursor: { NSCursor.hide() }, unhideCursor: { NSCursor.unhide() },
+                schedulesTimer: true
+            )
+        }
+    }
+
     @Published private(set) var isVisible = true
+    private let environment: Environment
     private var timer: Timer?
-    private weak var viewerWindow: NSWindow?
-    private var lastActivity = ProcessInfo.processInfo.systemUptime
-    private var lastPointerLocation = NSEvent.mouseLocation
+    private var lastActivity: TimeInterval
+    private var lastPointerLocation: CGPoint
     private var isCursorHidden = false
     private var isSuspended = false
     private(set) var isPointerInsideWindow = false
     private var isPointerOverControls = false
     private var isWaterfallSizeAdjusting = false
+
+    init(environment: Environment = .live) {
+        self.environment = environment
+        lastActivity = environment.now()
+        lastPointerLocation = environment.pointerLocation()
+    }
 
     func pointerActivity() {
         isPointerInsideWindow = true
@@ -37,7 +83,7 @@ private final class ControlVisibilityController: ObservableObject {
     }
 
     func interactionBegan() {
-        lastActivity = ProcessInfo.processInfo.systemUptime
+        lastActivity = environment.now()
     }
 
     func setPointerOverControls(_ hovering: Bool) {
@@ -53,7 +99,7 @@ private final class ControlVisibilityController: ObservableObject {
     func setWaterfallSizeAdjusting(_ adjusting: Bool) {
         isWaterfallSizeAdjusting = adjusting
         if adjusting {
-            lastActivity = ProcessInfo.processInfo.systemUptime
+            lastActivity = environment.now()
         } else {
             revealAndSchedule()
         }
@@ -68,10 +114,9 @@ private final class ControlVisibilityController: ObservableObject {
     }
 
     func scheduleHide() {
-        lastActivity = ProcessInfo.processInfo.systemUptime
-        guard timer == nil else { return }
-        viewerWindow = NSApp.windows.first { $0 is ViewerOverlayWindow }
-        lastPointerLocation = NSEvent.mouseLocation
+        lastActivity = environment.now()
+        guard environment.schedulesTimer, timer == nil else { return }
+        lastPointerLocation = environment.pointerLocation()
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkInactivity() }
         }
@@ -92,31 +137,30 @@ private final class ControlVisibilityController: ObservableObject {
 
     func revealCursor() {
         guard isCursorHidden else { return }
-        NSCursor.unhide()
+        environment.unhideCursor()
         isCursorHidden = false
     }
 
-    private func checkInactivity() {
-        let location = NSEvent.mouseLocation
+    func checkInactivity() {
+        let location = environment.pointerLocation()
         let moved = location != lastPointerLocation
         lastPointerLocation = location
-        guard let window = viewerWindow else { return }
+        guard let window = environment.window() else { return }
         isPointerInsideWindow = window.frame.contains(location)
-        guard !isSuspended, NSApp.isActive, window.isKeyWindow,
-              window.isVisible, window.attachedSheet == nil,
-              NSApp.modalWindow == nil else {
+        guard !isSuspended, window.isActive, window.isKey,
+              window.isVisible, !window.hasSheet, !window.hasModal else {
             revealAndSchedule()
             return
         }
-        if moved || NSEvent.pressedMouseButtons != 0 || isPointerOverControls || isWaterfallSizeAdjusting {
+        if moved || environment.pressedButtons() != 0 || isPointerOverControls || isWaterfallSizeAdjusting {
             revealAndSchedule()
             return
         }
         if !isPointerInsideWindow { revealCursor() }
-        guard ProcessInfo.processInfo.systemUptime - lastActivity >= 1.8 else { return }
+        guard environment.now() - lastActivity >= 1.8 else { return }
         if isVisible { isVisible = false }
         if isPointerInsideWindow && !isCursorHidden {
-            NSCursor.hide()
+            environment.hideCursor()
             isCursorHidden = true
         }
     }
