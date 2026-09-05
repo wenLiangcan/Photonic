@@ -870,7 +870,10 @@ private struct ImageCanvas: View {
                     }
                 case .fit:
                     withAnimation(.snappy(duration: 0.26)) {
-                        zoom = fitZoom(in: proxy.size)
+                        // The base image size is already the opening size: fit large
+                        // images to the canvas, but keep smaller images at 1:1 pixels.
+                        // Returning to a zoom of 1 therefore restores that exact view.
+                        zoom = 1
                         offset = .zero
                     }
                 case .reset:
@@ -1041,19 +1044,6 @@ private struct ImageCanvas: View {
             return image.size
         }
         return CGSize(width: representation.pixelsWide, height: representation.pixelsHigh)
-    }
-
-    private func fitZoom(in canvasSize: CGSize) -> Double {
-        guard let image = ImageCache.shared.image(for: item.url) else { return 1 }
-        var displaySize = baseImageSize(for: image, in: canvasSize)
-        if isQuarterTurnRotation {
-            displaySize = CGSize(width: displaySize.height, height: displaySize.width)
-        }
-        guard displaySize.width > 0, displaySize.height > 0 else { return 1 }
-        return min(max(min(
-            canvasSize.width / displaySize.width,
-            canvasSize.height / displaySize.height
-        ), 0.35), 8)
     }
 
     private var isQuarterTurnRotation: Bool {
