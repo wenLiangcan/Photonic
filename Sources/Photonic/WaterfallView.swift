@@ -38,12 +38,12 @@ struct WaterfallView: View {
                                     WaterfallPhotoTile(
                                         item: tile.item,
                                         selected: tile.item == viewer.currentItem,
+                                        size: CGSize(width: layout.itemWidth, height: tile.height),
                                         maxPixelSize: thumbnailPixelSize,
                                         loadingEnabled: !isResizing && !isSizeAdjustmentActive
                                     ) {
                                         viewer.showInSingleView(tile.item)
                                     }
-                                    .frame(width: layout.itemWidth, height: tile.height)
                                     .id(tile.item.id)
                                 }
                             }
@@ -147,6 +147,7 @@ struct WaterfallView: View {
 private struct WaterfallPhotoTile: View {
     let item: ViewerItem
     let selected: Bool
+    let size: CGSize
     let maxPixelSize: Int
     let loadingEnabled: Bool
     let action: () -> Void
@@ -163,6 +164,8 @@ private struct WaterfallPhotoTile: View {
                     Image(decorative: thumbnail, scale: 1)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
+                        .frame(width: size.width, height: size.height)
+                        .clipped()
                 } else {
                     Image(systemName: "photo")
                         .font(.system(size: 20, weight: .ultraLight))
@@ -184,8 +187,10 @@ private struct WaterfallPhotoTile: View {
                     .padding(10)
                     .opacity(isHovering ? 1 : 0)
             }
+            .frame(width: size.width, height: size.height)
             .contentShape(Rectangle())
         }
+        .frame(width: size.width, height: size.height)
         .buttonStyle(.plain)
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay {
