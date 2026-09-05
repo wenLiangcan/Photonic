@@ -2,6 +2,13 @@ import AppKit
 import MapKit
 import SwiftUI
 
+extension Notification.Name {
+    static let photonicFilePickerWillOpen = Notification.Name("PhotonicFilePickerWillOpen")
+    static let photonicFilePickerDidClose = Notification.Name("PhotonicFilePickerDidClose")
+    static let photonicPointerActivity = Notification.Name("PhotonicPointerActivity")
+    static let photonicPointerInteractionBegan = Notification.Name("PhotonicPointerInteractionBegan")
+}
+
 @MainActor
 final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
     private let viewer = ViewerStore()
@@ -200,8 +207,43 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func installInputMonitor() {
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .scrollWheel, .leftMouseDown]) { [weak self] event in
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [
+            .keyDown,
+            .scrollWheel,
+            .mouseMoved,
+            .leftMouseDown,
+            .leftMouseDragged,
+            .leftMouseUp,
+            .rightMouseDown,
+            .rightMouseDragged,
+            .rightMouseUp,
+            .otherMouseDown,
+            .otherMouseDragged,
+            .otherMouseUp
+        ]) { [weak self] event in
             guard let self, let window = self.viewerWindow, event.window === window else { return event }
+
+            switch event.type {
+            case .leftMouseDown, .leftMouseDragged,
+                 .rightMouseDown, .rightMouseDragged,
+                 .otherMouseDown, .otherMouseDragged:
+                // Keep the dock alive throughout AppKit's button/slider
+                // tracking loop without changing SwiftUI view identity.
+                NotificationCenter.default.post(
+                    name: .photonicPointerInteractionBegan,
+                    object: window
+                )
+            case .mouseMoved, .scrollWheel,
+                 .leftMouseUp, .rightMouseUp, .otherMouseUp:
+                // Local monitors run before AppKit dispatches the event. Defer
+                // the SwiftUI state update so button tracking receives its full
+                // down/up sequence before the view tree can be invalidated.
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .photonicPointerActivity, object: window)
+                }
+            default:
+                break
+            }
 
             if event.type == .leftMouseDown {
                 let contentHeight = window.contentView?.bounds.height ?? window.frame.height
@@ -250,6 +292,12 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
                 self.viewer.requestZoom(.continuous(delta: delta, anchor: anchor))
                 return nil
             }
+
+            // Pointer activity is observed above, but its events must continue
+            // to AppKit unchanged. NSEvent's characters/keyCode accessors are
+            // only valid for key events; reading them for mouse-up interrupts
+            // dispatch before a button can complete its click.
+            guard event.type == .keyDown else { return event }
 
             let shortcutModifiers = event.modifierFlags.intersection([.command, .control, .option])
             let isQuestionMark = event.characters == "?" || (

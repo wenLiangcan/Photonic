@@ -1,12 +1,136 @@
 import AppKit
 import SwiftUI
 
+private func performWidgetAction(_ action: () -> Void) {
+    action()
+    // Accessibility presses and some mouse-driver button mappings do not emit
+    // a normal NSEvent sequence. Account for the activation at the source.
+    DispatchQueue.main.async {
+        NotificationCenter.default.post(
+            name: .photonicPointerActivity,
+            object: NSApp.keyWindow
+        )
+    }
+}
+
+@MainActor
+private final class ControlVisibilityController: ObservableObject {
+    @Published private(set) var isVisible = true
+    private var timer: Timer?
+    private weak var viewerWindow: NSWindow?
+    private var lastActivity = ProcessInfo.processInfo.systemUptime
+    private var lastPointerLocation = NSEvent.mouseLocation
+    private var isCursorHidden = false
+    private var isSuspended = false
+    private(set) var isPointerInsideWindow = false
+    private var isPointerOverControls = false
+    private var isWaterfallSizeAdjusting = false
+
+    func pointerActivity() {
+        isPointerInsideWindow = true
+        revealAndSchedule()
+    }
+
+    func pointerExited() {
+        isPointerInsideWindow = false
+        scheduleHide()
+    }
+
+    func interactionBegan() {
+        lastActivity = ProcessInfo.processInfo.systemUptime
+    }
+
+    func setPointerOverControls(_ hovering: Bool) {
+        isPointerOverControls = hovering
+        if hovering {
+            isPointerInsideWindow = true
+            revealAndSchedule()
+        } else {
+            scheduleHide()
+        }
+    }
+
+    func setWaterfallSizeAdjusting(_ adjusting: Bool) {
+        isWaterfallSizeAdjusting = adjusting
+        if adjusting {
+            lastActivity = ProcessInfo.processInfo.systemUptime
+        } else {
+            revealAndSchedule()
+        }
+    }
+
+    func revealAndSchedule() {
+        revealCursor()
+        if !isVisible {
+            isVisible = true
+        }
+        scheduleHide()
+    }
+
+    func scheduleHide() {
+        lastActivity = ProcessInfo.processInfo.systemUptime
+        guard timer == nil else { return }
+        viewerWindow = NSApp.windows.first { $0 is ViewerOverlayWindow }
+        lastPointerLocation = NSEvent.mouseLocation
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkInactivity() }
+        }
+        self.timer = timer
+        // Continue observing during AppKit tracking loops (buttons and sliders).
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    func suspend() {
+        isSuspended = true
+        revealAndSchedule()
+    }
+
+    func resume() {
+        isSuspended = false
+        revealAndSchedule()
+    }
+
+    func revealCursor() {
+        guard isCursorHidden else { return }
+        NSCursor.unhide()
+        isCursorHidden = false
+    }
+
+    private func checkInactivity() {
+        let location = NSEvent.mouseLocation
+        let moved = location != lastPointerLocation
+        lastPointerLocation = location
+        guard let window = viewerWindow else { return }
+        isPointerInsideWindow = window.frame.contains(location)
+        guard !isSuspended, NSApp.isActive, window.isKeyWindow,
+              window.isVisible, window.attachedSheet == nil,
+              NSApp.modalWindow == nil else {
+            revealAndSchedule()
+            return
+        }
+        if moved || NSEvent.pressedMouseButtons != 0 || isPointerOverControls || isWaterfallSizeAdjusting {
+            revealAndSchedule()
+            return
+        }
+        if !isPointerInsideWindow { revealCursor() }
+        guard ProcessInfo.processInfo.systemUptime - lastActivity >= 1.8 else { return }
+        if isVisible { isVisible = false }
+        if isPointerInsideWindow && !isCursorHidden {
+            NSCursor.hide()
+            isCursorHidden = true
+        }
+    }
+
+    func cancel() {
+        timer?.invalidate()
+        timer = nil
+        revealCursor()
+    }
+}
+
 struct PhotoViewer: View {
     @EnvironmentObject private var viewer: ViewerStore
-    @State private var controlsVisible = true
-    @State private var hideControlsTask: Task<Void, Never>?
-    @State private var isPointerInsideWindow = false
-    @State private var isCursorHidden = false
+    @StateObject private var controlVisibility = ControlVisibilityController()
     @State private var isWaterfallSizeAdjusting = false
     @State private var isInspectorVisible = false
     @FocusState private var viewerHasFocus: Bool
@@ -21,22 +145,26 @@ struct PhotoViewer: View {
 
             VStack(spacing: 0) {
                 TopChrome()
+                    .onHover(perform: updateControlHover)
                 Spacer()
                 FloatingDock(isWaterfallSizeAdjusting: $isWaterfallSizeAdjusting)
                     .padding(.bottom, 20)
+                    .onHover(perform: updateControlHover)
             }
-            .opacity(controlsVisible ? 1 : 0)
-            .allowsHitTesting(controlsVisible)
+            .opacity(controlVisibility.isVisible ? 1 : 0)
+            .allowsHitTesting(controlVisibility.isVisible)
 
             if viewer.viewMode == .single && !viewer.isComparing {
                 HStack {
                     NavigationButton(icon: "chevron.left", action: viewer.previous)
+                        .onHover(perform: updateControlHover)
                     Spacer()
                     NavigationButton(icon: "chevron.right", action: viewer.next)
+                        .onHover(perform: updateControlHover)
                 }
                 .padding(.horizontal, 18)
-                .opacity(controlsVisible ? 1 : 0)
-                .allowsHitTesting(controlsVisible)
+                .opacity(controlVisibility.isVisible ? 1 : 0)
+                .allowsHitTesting(controlVisibility.isVisible)
             }
 
             if viewer.viewMode == .single,
@@ -91,7 +219,7 @@ struct PhotoViewer: View {
             }
         }
         .ignoresSafeArea(.container, edges: .top)
-        .animation(.easeOut(duration: 0.28), value: controlsVisible)
+        .animation(.easeOut(duration: 0.28), value: controlVisibility.isVisible)
         .animation(.easeOut(duration: 0.18), value: viewer.isShortcutReferenceVisible)
         .animation(.easeOut(duration: 0.18), value: viewer.navigationLoopFeedback?.id)
         .animation(.easeOut(duration: 0.18), value: viewer.slideshowFeedback?.id)
@@ -99,30 +227,48 @@ struct PhotoViewer: View {
         .onContinuousHover { phase in
             switch phase {
             case .active:
-                isPointerInsideWindow = true
-                revealControls()
+                controlVisibility.pointerActivity()
             case .ended:
-                isPointerInsideWindow = false
+                controlVisibility.pointerExited()
                 revealCursorIfNeeded()
-                scheduleControlHide()
             }
         }
         .onAppear {
-            scheduleControlHide()
+            controlVisibility.scheduleHide()
             requestViewerFocus()
         }
-        .onChange(of: viewer.currentItem?.id) { _, _ in requestViewerFocus() }
+        .onChange(of: viewer.currentItem?.id) { _, _ in
+            requestViewerFocus()
+            // Image navigation (including keyboard and slideshow changes)
+            // preserves visibility. Pointer activity and picker dismissal
+            // independently reveal the controls when appropriate.
+        }
         .onChange(of: viewer.viewMode) { _, mode in
             if mode != .single { isInspectorVisible = false }
         }
         .onChange(of: viewer.isComparing) { _, comparing in
             if comparing { isInspectorVisible = false }
         }
+        .onChange(of: isWaterfallSizeAdjusting) { _, isAdjusting in
+            controlVisibility.setWaterfallSizeAdjusting(isAdjusting)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .photonicFilePickerWillOpen)) { _ in
+            controlVisibility.suspend()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .photonicFilePickerDidClose)) { _ in
+            controlVisibility.resume()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             revealCursorIfNeeded()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .photonicPointerActivity)) { _ in
+            controlVisibility.pointerActivity()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .photonicPointerInteractionBegan)) { _ in
+            controlVisibility.interactionBegan()
+        }
         .onDisappear {
-            hideControlsTask?.cancel()
+            controlVisibility.cancel()
             revealCursorIfNeeded()
         }
         .focusable()
@@ -174,37 +320,16 @@ struct PhotoViewer: View {
         }
     }
 
-    private func revealControls() {
-        hideControlsTask?.cancel()
-        revealCursorIfNeeded()
-        controlsVisible = true
-        scheduleControlHide()
+    private func updateControlHover(_ hovering: Bool) {
+        controlVisibility.setPointerOverControls(hovering)
     }
 
     private func revealCursorIfNeeded() {
-        guard isCursorHidden else { return }
-        NSCursor.unhide()
-        isCursorHidden = false
-    }
-
-    private func hideCursorIfNeeded() {
-        guard isPointerInsideWindow, !isCursorHidden else { return }
-        NSCursor.hide()
-        isCursorHidden = true
+        controlVisibility.revealCursor()
     }
 
     private func requestViewerFocus() {
         Task { @MainActor in viewerHasFocus = true }
-    }
-
-    private func scheduleControlHide() {
-        hideControlsTask?.cancel()
-        hideControlsTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1.8))
-            guard !Task.isCancelled else { return }
-            controlsVisible = false
-            hideCursorIfNeeded()
-        }
     }
 
     @ViewBuilder
@@ -476,9 +601,9 @@ private struct TopChrome: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Button { NSApp.keyWindow?.close() } label: { Image(systemName: "xmark") }
+            Button { performWidgetAction { NSApp.keyWindow?.close() } } label: { Image(systemName: "xmark") }
                 .help("Close window")
-            Button { viewer.presentOpenPanel() } label: { Image(systemName: "folder") }
+            Button { performWidgetAction { viewer.presentOpenPanel() } } label: { Image(systemName: "folder") }
                 .help("Open image")
 
             Spacer()
@@ -495,11 +620,11 @@ private struct TopChrome: View {
 
             Spacer()
 
-            Button { NSApp.keyWindow?.toggleFullScreen(nil) } label: {
+            Button { performWidgetAction { NSApp.keyWindow?.toggleFullScreen(nil) } } label: {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
             }
             .help("Toggle full screen (F)")
-            Button(action: viewer.revealInFinder) { Image(systemName: "arrow.right.circle") }
+            Button { performWidgetAction(viewer.revealInFinder) } label: { Image(systemName: "arrow.right.circle") }
                 .help("Reveal in Finder")
         }
         .buttonStyle(ChromeButtonStyle())
@@ -931,7 +1056,9 @@ private struct DockButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            performWidgetAction(action)
+        } label: {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .medium))
                 .frame(width: 31, height: 31)
@@ -955,7 +1082,9 @@ private struct NavigationButton: View {
     @State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            performWidgetAction(action)
+        } label: {
             Image(systemName: icon)
                 .font(.system(size: 19, weight: .semibold))
                 .frame(width: 42, height: 60)
@@ -980,7 +1109,9 @@ private struct ComparisonLabel: View {
     }
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            performWidgetAction(action)
+        } label: {
             HStack(spacing: 7) {
                 Text(letter)
                     .font(.system(size: 10, weight: .bold, design: .rounded))

@@ -138,10 +138,12 @@ final class ViewerStore: ObservableObject {
         }
 
         openPanel = panel
+        NotificationCenter.default.post(name: .photonicFilePickerWillOpen, object: nil)
         panel.begin { [weak self, weak panel] response in
             guard let self else { return }
             defer {
                 if self.openPanel === panel { self.openPanel = nil }
+                NotificationCenter.default.post(name: .photonicFilePickerDidClose, object: nil)
             }
             guard response == .OK, let panel else { return }
 
