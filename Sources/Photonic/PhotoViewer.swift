@@ -399,7 +399,7 @@ struct PhotoViewer: View {
                         comparisonPane(item: comparison, side: .secondary, rotationDegrees: 0)
                     }
                 }
-                .background(.black.opacity(0.28))
+                // Use ContentView's shared backdrop, including the side margins.
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .padding(.horizontal, 24)
             } else {
