@@ -138,6 +138,7 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
         ])
 
         window.contentView = overlayRoot
+        window.installBackdrop()
         window.makeKeyAndOrderFrontOptimized()
         viewerWindow = window
     }
@@ -608,14 +609,11 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-final class ViewerOverlayWindow: NSWindow {
-    private var backgroundEffectResumeTask: Task<Void, Never>?
-    private static let resizeFallbackColor = NSColor(
-        calibratedRed: 0.105,
-        green: 0.11,
-        blue: 0.125,
-        alpha: 1
-    )
+final class ViewerOverlayWindow: NSWindow, NSWindowDelegate {
+    private var resizeLayoutResumeTask: Task<Void, Never>?
+    private var backdropWindow: ViewerBackdropWindow?
+    private var backdropObservers: [NSObjectProtocol] = []
+    private var isFullScreenTransitioning = false
 
     init(contentRect: NSRect) {
         super.init(
@@ -630,7 +628,10 @@ final class ViewerOverlayWindow: NSWindow {
         titlebarSeparatorStyle = .none
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = true
+        // A transparent foreground's shadow follows its photos and widgets.
+        // macOS 15 can retain that silhouette after their alpha/size changes.
+        // Only the stable backdrop window should cast a window shadow.
+        hasShadow = false
         isMovableByWindowBackground = false
         isReleasedWhenClosed = false
         level = .normal
@@ -642,55 +643,137 @@ final class ViewerOverlayWindow: NSWindow {
         standardWindowButton(.closeButton)?.isHidden = true
         standardWindowButton(.miniaturizeButton)?.isHidden = true
         standardWindowButton(.zoomButton)?.isHidden = true
+        delegate = self
     }
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 
+    func installBackdrop() {
+        guard backdropWindow == nil else { return }
+        let backdrop = ViewerBackdropWindow(contentRect: frame)
+        backdropWindow = backdrop
+        addChildWindow(backdrop, ordered: .below)
+        synchronizeBackdropFrame()
+
+        let center = NotificationCenter.default
+        for name in [
+            NSWindow.didMoveNotification,
+            NSWindow.didResizeNotification
+        ] {
+            backdropObservers.append(center.addObserver(
+                forName: name,
+                object: self,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.synchronizeBackdropFrame()
+                    if name == NSWindow.didResizeNotification,
+                       !self.inLiveResize,
+                       (self.contentView as? OverlayRootView)?.isResizeLayoutDeferred == true {
+                        self.scheduleResizeLayoutRestore()
+                    }
+                }
+            })
+        }
+    }
+
     func toggleDesktopZoom() {
         setResizePerformanceMode(true)
-        displayIfNeeded()
-
-        // Give WindowServer one turn to replace the behind-window material
-        // before native zoom starts. On macOS 15, changing the effect and
-        // resizing in the same transaction can keep the expensive blur path
-        // alive for every animation frame.
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.performZoom(nil)
-            self.scheduleBackgroundEffectRestore()
-        }
+        performZoom(nil)
+        scheduleResizeLayoutRestore()
     }
 
     func makeKeyAndOrderFrontOptimized() {
-        setResizePerformanceMode(true)
-        displayIfNeeded()
+        // The backdrop is a separate compositor surface. Opening no longer
+        // needs an opaque stand-in or a delayed material activation.
         makeKeyAndOrderFront(nil)
-        scheduleBackgroundEffectRestore()
     }
 
     func setResizePerformanceMode(_ enabled: Bool) {
-        if enabled {
-            backgroundEffectResumeTask?.cancel()
-            backgroundEffectResumeTask = nil
-        }
-        (contentView as? OverlayRootView)?.setBackgroundEffectActive(!enabled)
-        isOpaque = enabled
-        backgroundColor = enabled ? Self.resizeFallbackColor : .clear
+        resizeLayoutResumeTask?.cancel()
+        resizeLayoutResumeTask = nil
+        // Scale the existing content while the window animates. Neither window
+        // changes opacity, material state, or background color during resize.
+        let canDefer = !isFullScreenTransitioning && !styleMask.contains(.fullScreen)
+        (contentView as? OverlayRootView)?.setResizeLayoutDeferred(enabled && canDefer)
     }
 
-    private func scheduleBackgroundEffectRestore() {
-        backgroundEffectResumeTask?.cancel()
-        backgroundEffectResumeTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(650))
+    func windowWillEnterFullScreen(_ notification: Notification) {
+        prepareFullScreenTransition()
+    }
+
+    func windowWillExitFullScreen(_ notification: Notification) {
+        prepareFullScreenTransition()
+    }
+
+    private func prepareFullScreenTransition() {
+        isFullScreenTransitioning = true
+        setResizePerformanceMode(false)
+        guard let backdropWindow else { return }
+        // A separate auxiliary window can be promoted above its parent in a
+        // fullscreen Space. There is no desktop to blur there: keep this
+        // window detached and out of the entire native fullscreen transition.
+        if backdropWindow.parent === self { removeChildWindow(backdropWindow) }
+        backdropWindow.orderOut(nil)
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        finishFullScreenTransition()
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        finishFullScreenTransition()
+    }
+
+    func windowDidFailToEnterFullScreen(_ window: NSWindow) {
+        finishFullScreenTransition()
+    }
+
+    func windowDidFailToExitFullScreen(_ window: NSWindow) {
+        finishFullScreenTransition()
+    }
+
+    private func finishFullScreenTransition() {
+        isFullScreenTransitioning = false
+        setResizePerformanceMode(false)
+        guard !styleMask.contains(.fullScreen), let backdropWindow else { return }
+        synchronizeBackdropFrame()
+        if backdropWindow.parent !== self { addChildWindow(backdropWindow, ordered: .below) }
+        if isVisible { backdropWindow.order(.below, relativeTo: windowNumber) }
+    }
+
+    override func close() {
+        resizeLayoutResumeTask?.cancel()
+        backdropObservers.forEach(NotificationCenter.default.removeObserver)
+        backdropObservers.removeAll()
+        if let backdropWindow {
+            if backdropWindow.parent === self { removeChildWindow(backdropWindow) }
+            backdropWindow.close()
+        }
+        backdropWindow = nil
+        super.close()
+    }
+
+    private func synchronizeBackdropFrame() {
+        backdropWindow?.setFrame(frame, display: false)
+    }
+
+    private func scheduleResizeLayoutRestore() {
+        resizeLayoutResumeTask?.cancel()
+        resizeLayoutResumeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(120))
             guard !Task.isCancelled else { return }
+            guard self?.inLiveResize == false else { return }
             self?.setResizePerformanceMode(false)
         }
     }
 }
 
 final class OverlayRootView: NSView {
-    private let desktopBlur = NSVisualEffectView()
+    private var resizeLayout = ResizeLayoutState()
+    var isResizeLayoutDeferred: Bool { resizeLayout.isDeferred }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -698,17 +781,6 @@ final class OverlayRootView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
 
-        desktopBlur.frame = bounds
-        desktopBlur.autoresizingMask = [.width, .height]
-        desktopBlur.material = .underWindowBackground
-        desktopBlur.blendingMode = .behindWindow
-        desktopBlur.state = .active
-        desktopBlur.isEmphasized = true
-        desktopBlur.appearance = NSAppearance(named: .darkAqua)
-        // Partial alpha intentionally preserves recognizable desktop color and
-        // structure beneath the blur instead of producing an opaque material.
-        desktopBlur.alphaValue = 0.64
-        addSubview(desktopBlur)
     }
 
     override var isOpaque: Bool { false }
@@ -723,25 +795,60 @@ final class OverlayRootView: NSView {
         (window as? ViewerOverlayWindow)?.setResizePerformanceMode(false)
     }
 
-    func setBackgroundEffectActive(_ active: Bool) {
-        if active {
-            desktopBlur.isHidden = false
-            desktopBlur.state = .active
-            layer?.backgroundColor = NSColor.clear.cgColor
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        // A fixed bounds coordinate space lets AppKit/Core Animation scale
+        // the existing layers without relaying every frame size to SwiftUI.
+        super.setBoundsSize(resizeLayout.contentSize(for: newSize))
+    }
+
+    func setResizeLayoutDeferred(_ deferred: Bool) {
+        if deferred {
+            resizeLayout.begin(contentSize: bounds.size)
+            super.setBoundsSize(resizeLayout.contentSize(for: frame.size))
         } else {
-            desktopBlur.state = .inactive
-            desktopBlur.isHidden = true
-            layer?.backgroundColor = NSColor(
-                calibratedRed: 0.105,
-                green: 0.11,
-                blue: 0.125,
-                alpha: 1
-            ).cgColor
+            guard resizeLayout.isDeferred else { return }
+            resizeLayout.end()
+            super.setBoundsSize(frame.size)
+            needsLayout = true
         }
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
+}
+
+final class ViewerBackdropWindow: NSWindow {
+    private let effectView = NSVisualEffectView()
+
+    init(contentRect: NSRect) {
+        super.init(
+            contentRect: contentRect,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
+        ignoresMouseEvents = true
+        isReleasedWhenClosed = false
+        collectionBehavior = [.fullScreenNone, .ignoresCycle]
+        appearance = NSAppearance(named: .darkAqua)
+
+        effectView.frame = NSRect(origin: .zero, size: contentRect.size)
+        effectView.autoresizingMask = [.width, .height]
+        effectView.material = .underWindowBackground
+        effectView.blendingMode = .behindWindow
+        effectView.state = .active
+        effectView.isEmphasized = true
+        effectView.appearance = NSAppearance(named: .darkAqua)
+        effectView.alphaValue = 0.64
+        contentView = effectView
+    }
+
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 }
 
 final class TransparentHostingView<Content: View>: NSHostingView<Content> {

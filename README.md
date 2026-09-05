@@ -106,7 +106,11 @@ If a tap update needs to be retried independently, run the **Update Homebrew Cas
 
 ## Window architecture
 
-The window is intentionally not a SwiftUI `WindowGroup`. AppKit creates a frameless, non-opaque normal-level `NSWindow`, places a dark-aqua `NSVisualEffectView` behind the content at partial alpha, and hosts the SwiftUI image canvas in a separate transparent `NSHostingView`. This keeps the photo fully opaque while the surrounding chrome reveals and blurs the live desktop beneath it without forcing the viewer above other apps.
+The window is intentionally not a SwiftUI `WindowGroup`. A transparent normal-level `NSWindow` hosts the image canvas. An attached, mouse-transparent backdrop window behind it contains the dark-aqua `NSVisualEffectView` at partial alpha. Only the backdrop casts a window shadow, keeping changing image and widget silhouettes out of macOS's foreground shadow cache.
+
+During resizing, the content retains its layout coordinate space and scales with the window; layout settles at the final size after resizing stops. Both windows remain transparent and the backdrop material stays active throughout opening and resizing. There is no opaque resize fallback or forced window redraw. This keeps photos opaque while the surrounding chrome reveals and blurs the live desktop beneath it.
+
+Native fullscreen detaches and hides the desktop backdrop before entering its Space, then reattaches it below the viewer after exiting. Resize scaling resets at both boundaries so widgets retain their correct click coordinates. Failed fullscreen transitions also restore the appropriate windowed/fullscreen presentation.
 
 ## License
 
