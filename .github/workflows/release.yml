@@ -67,3 +67,37 @@ jobs:
             --verify-tag \
             --title "Photonic $version" \
             --generate-notes
+
+      - name: Check out Homebrew tap
+        uses: actions/checkout@v6
+        with:
+          repository: wenLiangcan/homebrew-photonic
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update Homebrew cask
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          checksum="$(awk '{print $1}' "dist/Photonic-$version.dmg.sha256")"
+          cask="homebrew-tap/Casks/photonic.rb"
+
+          ruby -e '
+            path, version, checksum = ARGV
+            contents = File.read(path)
+            contents.sub!(/^  version ".*"$/, "  version \"#{version}\"") or abort "version field not found"
+            contents.sub!(/^  sha256 ".*"$/, "  sha256 \"#{checksum}\"") or abort "sha256 field not found"
+            File.write(path, contents)
+          ' "$cask" "$version" "$checksum"
+
+          cd homebrew-tap
+          if git diff --quiet -- Casks/photonic.rb; then
+            echo "Homebrew cask already points to Photonic $version."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/photonic.rb
+          git commit -m "Update Photonic cask to $version"
+          git push

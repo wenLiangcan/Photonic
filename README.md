@@ -94,7 +94,11 @@ To publish a release:
 2. Create a matching tag such as `v0.1.0`.
 3. Push the commit and tag to GitHub.
 
-The release workflow builds an ARM64 Apple silicon app, packages `Photonic-<version>.dmg`, verifies its version and architecture, creates a checksum, and publishes both files to GitHub Releases. Run `scripts/create-dmg.sh` to test the same packaging flow locally.
+The release workflow builds an ARM64 Apple silicon app, packages `Photonic-<version>.dmg`, verifies its version and architecture, creates a checksum, publishes both files to GitHub Releases, and updates the cask in the separate Homebrew tap. Run `scripts/create-dmg.sh` to test the same packaging flow locally.
+
+Homebrew publishing requires a repository Actions secret named `HOMEBREW_TAP_TOKEN`. Use a fine-grained personal access token belonging to the release owner, restricted to the `wenLiangcan/homebrew-photonic` repository with **Contents: Read and write** permission. This is necessary because the release repository's built-in `GITHUB_TOKEN` cannot write to a different repository.
+
+If a tap update needs to be retried independently, run the **Update Homebrew Cask** workflow manually and supply the already-published release version.
 
 ### App icon
 

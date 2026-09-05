@@ -1,0 +1,80 @@
+name: Update Homebrew Cask
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Photonic release version to publish to Homebrew
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  update-cask:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate release version
+        id: version
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid semantic version: $VERSION" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Read published DMG checksum
+        id: checksum
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          checksum="$(gh release download "v$VERSION" \
+            --repo wenLiangcan/Photonic \
+            --pattern "Photonic-$VERSION.dmg.sha256" \
+            --output - | awk '{print $1}')"
+          if [[ ! "$checksum" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Release v$VERSION did not provide a valid SHA-256 checksum." >&2
+            exit 1
+          fi
+          echo "checksum=$checksum" >> "$GITHUB_OUTPUT"
+
+      - name: Check out Homebrew tap
+        uses: actions/checkout@v6
+        with:
+          repository: wenLiangcan/homebrew-photonic
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Update and publish cask
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CHECKSUM: ${{ steps.checksum.outputs.checksum }}
+        run: |
+          set -euo pipefail
+          cask="Casks/photonic.rb"
+          ruby -e '
+            path, version, checksum = ARGV
+            contents = File.read(path)
+            contents.sub!(/^  version ".*"$/, "  version \"#{version}\"") or abort "version field not found"
+            contents.sub!(/^  sha256 ".*"$/, "  sha256 \"#{checksum}\"") or abort "sha256 field not found"
+            File.write(path, contents)
+          ' "$cask" "$VERSION" "$CHECKSUM"
+
+          if git diff --quiet -- "$cask"; then
+            echo "Homebrew cask already points to Photonic $VERSION."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$cask"
+          git commit -m "Update Photonic cask to $VERSION"
+          git push
