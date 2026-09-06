@@ -724,7 +724,6 @@ private struct FloatingDock: View {
                 DockButton(icon: "arrow.down.right.and.arrow.up.left", help: "Fit to window") { viewer.requestZoom(.fit) }
                 DockButton(icon: "plus.magnifyingglass", help: "Zoom in") { viewer.requestZoom(.zoomIn) }
                 DockDivider()
-                DockButton(icon: "rotate.right", help: "Rotate clockwise", action: viewer.rotateClockwise)
                 if viewer.rotationQuarterTurns != 0 {
                     DockButton(
                         icon: "arrow.counterclockwise",
@@ -734,6 +733,7 @@ private struct FloatingDock: View {
                     )
                     .transition(.scale.combined(with: .opacity))
                 }
+                DockButton(icon: "rotate.right", help: "Rotate clockwise", action: viewer.rotateClockwise)
                 DockButton(
                     icon: viewer.isSlideshowRunning ? "pause.fill" : "play.fill",
                     help: viewer.isSlideshowRunning ? "Pause slideshow" : "Start slideshow",
@@ -769,6 +769,10 @@ private struct FloatingDock: View {
         }
         .shadow(color: .black.opacity(0.48), radius: 20, y: 8)
         .fixedSize(horizontal: true, vertical: false)
+        // Adding the reset button contributes 31 points plus the HStack's
+        // 5-point spacing. Shift by half of that growth so Rotate stays fixed.
+        .offset(x: viewer.viewMode == .single && viewer.rotationQuarterTurns != 0 ? -18 : 0)
+        .animation(.easeOut(duration: 0.16), value: viewer.rotationQuarterTurns != 0)
     }
 }
 
