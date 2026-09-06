@@ -836,6 +836,14 @@ private struct ImageCanvas: View {
                         .offset(offset)
                         .shadow(color: .black.opacity(0.52), radius: 24, y: 10)
                         .animation(.smooth(duration: 0.28), value: rotationDegrees)
+                        // A quarter-turn can make the image's unrotated frame taller
+                        // than the viewport. Keep that frame from expanding the ZStack
+                        // so rotation always uses the actual canvas center.
+                        .frame(
+                            width: proxy.size.width,
+                            height: proxy.size.height,
+                            alignment: .center
+                        )
                 } else {
                     ContentUnavailableView("Unable to display image", systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.white.opacity(0.65))
@@ -890,6 +898,9 @@ private struct ImageCanvas: View {
                 }
             }
             .onChange(of: item.id) { resetView() }
+            .onChange(of: rotationDegrees) {
+                recenterAfterRotation()
+            }
         }
         .clipped()
     }
@@ -1060,6 +1071,12 @@ private struct ImageCanvas: View {
 
     private func resetView() {
         zoom = 1
+        offset = .zero
+        magnifyBase = nil
+        dragBase = nil
+    }
+
+    private func recenterAfterRotation() {
         offset = .zero
         magnifyBase = nil
         dragBase = nil
