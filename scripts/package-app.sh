@@ -43,13 +43,31 @@ cp "$PROJECT_DIR/Resources/Info.plist" "$CONTENTS_DIR/Info.plist"
 # Compile the Icon Composer document with Apple's asset compiler. actool emits
 # the adaptive Assets.car and its official Photonic.icns compatibility asset.
 ICON_INFO_PLIST="$PROJECT_DIR/.build/Photonic-icon-info.plist"
+ACTOOL_OUTPUT="$(mktemp "${TMPDIR:-/tmp}/photonic-actool.XXXXXX")"
 rm -f "$ICON_INFO_PLIST"
-"$ACTOOL" "$PROJECT_DIR/Resources/Photonic.icon" \
-    --compile "$CONTENTS_DIR/Resources" \
-    --platform macosx \
-    --minimum-deployment-target 14.0 \
-    --app-icon Photonic \
-    --output-partial-info-plist "$ICON_INFO_PLIST"
+if ! "$ACTOOL" "$PROJECT_DIR/Resources/Photonic.icon" \
+        --compile "$CONTENTS_DIR/Resources" \
+        --platform macosx \
+        --target-device mac \
+        --minimum-deployment-target 14.0 \
+        --app-icon Photonic \
+        --output-partial-info-plist "$ICON_INFO_PLIST" >"$ACTOOL_OUTPUT" 2>&1; then
+    cat "$ACTOOL_OUTPUT" >&2
+    if grep -Eq 'CoreSimulator|simdiskimaged|NSPlaceholderArray' "$ACTOOL_OUTPUT"; then
+        cat >&2 <<'EOF'
+
+actool failed while compiling Resources/Photonic.icon.
+This usually means the script is running in a restricted sandbox that blocks
+Apple's asset compiler from reaching required Xcode services. Run the build
+from a normal Terminal session, or allow the command to run with normal local
+permissions in Codex.
+EOF
+    fi
+    rm -f "$ACTOOL_OUTPUT"
+    exit 1
+fi
+cat "$ACTOOL_OUTPUT"
+rm -f "$ACTOOL_OUTPUT"
 plutil -replace CFBundleIconFile \
     -string "$(plutil -extract CFBundleIconFile raw "$ICON_INFO_PLIST")" \
     "$CONTENTS_DIR/Info.plist"
