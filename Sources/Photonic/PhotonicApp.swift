@@ -845,13 +845,22 @@ final class ViewerBackdropWindow: NSWindow {
     init(contentRect: NSRect) {
         super.init(
             contentRect: contentRect,
-            styleMask: [.borderless],
+            // Match the foreground's native frame so WindowServer clips both
+            // surfaces to the same system-rounded silhouette. A borderless
+            // backdrop leaves square material visible beneath its corners.
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
+        titleVisibility = .hidden
+        titlebarAppearsTransparent = true
+        titlebarSeparatorStyle = .none
+        standardWindowButton(.closeButton)?.isHidden = true
+        standardWindowButton(.miniaturizeButton)?.isHidden = true
+        standardWindowButton(.zoomButton)?.isHidden = true
         ignoresMouseEvents = true
         isReleasedWhenClosed = false
         collectionBehavior = [.fullScreenNone, .ignoresCycle]
