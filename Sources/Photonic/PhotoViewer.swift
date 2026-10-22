@@ -56,7 +56,7 @@ final class ControlVisibilityController: ObservableObject {
     }
 
     @Published private(set) var isVisible = true
-    private let environment: Environment
+    private var environment: Environment
     private var timer: Timer?
     private var lastActivity: TimeInterval
     private var lastPointerLocation: CGPoint
@@ -70,6 +70,17 @@ final class ControlVisibilityController: ObservableObject {
         self.environment = environment
         lastActivity = environment.now()
         lastPointerLocation = environment.pointerLocation()
+    }
+
+    func bind(to window: NSWindow?) {
+        environment.window = { [weak window] in
+            guard let window else { return nil }
+            return WindowState(
+                frame: window.frame, isActive: NSApp.isActive,
+                isKey: window.isKeyWindow, isVisible: window.isVisible,
+                hasSheet: window.attachedSheet != nil, hasModal: NSApp.modalWindow != nil
+            )
+        }
     }
 
     func pointerActivity() {
@@ -278,6 +289,7 @@ struct PhotoViewer: View {
             }
         }
         .onAppear {
+            controlVisibility.bind(to: viewer.window)
             controlVisibility.scheduleHide()
             requestViewerFocus()
         }
@@ -296,19 +308,23 @@ struct PhotoViewer: View {
         .onChange(of: isWaterfallSizeAdjusting) { _, isAdjusting in
             controlVisibility.setWaterfallSizeAdjusting(isAdjusting)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .photonicFilePickerWillOpen)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .photonicFilePickerWillOpen)) { notification in
+            guard notification.object as? NSWindow === viewer.window else { return }
             controlVisibility.suspend()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .photonicFilePickerDidClose)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .photonicFilePickerDidClose)) { notification in
+            guard notification.object as? NSWindow === viewer.window else { return }
             controlVisibility.resume()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             revealCursorIfNeeded()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .photonicPointerActivity)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .photonicPointerActivity)) { notification in
+            guard notification.object as? NSWindow === viewer.window else { return }
             controlVisibility.pointerActivity()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .photonicPointerInteractionBegan)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .photonicPointerInteractionBegan)) { notification in
+            guard notification.object as? NSWindow === viewer.window else { return }
             controlVisibility.interactionBegan()
         }
         .onDisappear {

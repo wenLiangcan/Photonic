@@ -11,19 +11,23 @@ extension Notification.Name {
 
 @MainActor
 final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
-    private let viewer = ViewerStore()
-    private var viewerWindow: ViewerOverlayWindow?
+    private var windows: [ViewerOverlayWindow] = []
+    private var viewerWindow: ViewerOverlayWindow? {
+        (NSApp.keyWindow as? ViewerOverlayWindow) ?? windows.last
+    }
+    private var viewer: ViewerStore { viewerWindow!.viewer }
     private var eventMonitor: Any?
     private var receivedExternalOpenRequest = false
     private var horizontalScrollAccumulator = 0.0
     private var horizontalScrollDidNavigate = false
     private var horizontalScrollResetTask: Task<Void, Never>?
     private var lastPhaseLessHorizontalNavigationTime = -Double.infinity
+    private weak var horizontalScrollWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         installMainMenu()
-        showViewerWindow()
+        if windows.isEmpty { showViewerWindow() }
         installInputMonitor()
         NSApp.activate(ignoringOtherApps: true)
 
@@ -46,8 +50,14 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         receivedExternalOpenRequest = true
-        showViewerWindow()
-        viewer.open(urls: urls)
+        let window: ViewerOverlayWindow
+        if !receivedExternalOpenRequestBeforeLaunch, let empty = windows.first(where: { $0.viewer.currentItem == nil }) {
+            window = empty
+        } else {
+            window = showViewerWindow()
+        }
+        receivedExternalOpenRequestBeforeLaunch = true
+        window.viewer.open(urls: urls)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -108,24 +118,20 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
         viewer.toggleShortcutReference()
     }
 
-    private func showViewerWindow() {
-        if let viewerWindow {
-            if viewerWindow.isVisible {
-                viewerWindow.makeKeyAndOrderFront(nil)
-            } else {
-                viewerWindow.makeKeyAndOrderFrontOptimized()
-            }
-            return
-        }
+    private var receivedExternalOpenRequestBeforeLaunch = false
+
+    @discardableResult
+    private func showViewerWindow() -> ViewerOverlayWindow {
 
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
         let frame = screenFrame
 
         let window = ViewerOverlayWindow(contentRect: frame)
+        window.viewer.window = window
         let overlayRoot = OverlayRootView(frame: NSRect(origin: .zero, size: frame.size))
         let hostingView = TransparentHostingView(
             rootView: ContentView()
-                .environmentObject(viewer)
+                .environmentObject(window.viewer)
                 .frame(minWidth: 760, minHeight: 520)
         )
         hostingView.translatesAutoresizingMaskIntoConstraints = false
@@ -140,7 +146,11 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
         window.contentView = overlayRoot
         window.installBackdrop()
         window.makeKeyAndOrderFrontOptimized()
-        viewerWindow = window
+        windows.append(window)
+        window.onClose = { [weak self, weak window] in
+            self?.windows.removeAll { $0 === window }
+        }
+        return window
     }
 
     private func installMainMenu() {
@@ -222,7 +232,14 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
             .otherMouseDragged,
             .otherMouseUp
         ]) { [weak self] event in
-            guard let self, let window = self.viewerWindow, event.window === window else { return event }
+            guard let self, let window = event.window as? ViewerOverlayWindow,
+                  self.windows.contains(where: { $0 === window }) else { return event }
+            let viewer = window.viewer
+            if self.horizontalScrollWindow !== window {
+                self.resetHorizontalScrollState()
+                self.lastPhaseLessHorizontalNavigationTime = -Double.infinity
+                self.horizontalScrollWindow = window
+            }
 
             return ViewerInputRouter.route(event, interactionBegan: {
                 NotificationCenter.default.post(
@@ -240,7 +257,7 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
                 }
                 return event
             }, scrollWheel: { event in
-                guard self.viewer.viewMode == .single else { return event }
+                guard viewer.viewMode == .single else { return event }
 
                 // The app-level image zoom monitor must not steal wheel events
                 // from interactive sidebar content. Metadata pages consume the
@@ -273,7 +290,7 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
                     x: location.x,
                     y: contentView.bounds.height - location.y
                 )
-                self.viewer.requestZoom(.continuous(delta: delta, anchor: anchor))
+                viewer.requestZoom(.continuous(delta: delta, anchor: anchor))
                 return nil
             }, keyDown: { event in
                 let shortcutModifiers = event.modifierFlags.intersection([.command, .control, .option])
@@ -281,13 +298,13 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
                     event.charactersIgnoringModifiers == "/" && event.modifierFlags.contains(.shift)
                 )
                 if shortcutModifiers.isEmpty, isQuestionMark {
-                    self.viewer.toggleShortcutReference()
+                    viewer.toggleShortcutReference()
                     return nil
                 }
 
-                if self.viewer.isShortcutReferenceVisible {
+                if viewer.isShortcutReferenceVisible {
                     if event.keyCode == 53 { // Escape
-                        self.viewer.isShortcutReferenceVisible = false
+                        viewer.isShortcutReferenceVisible = false
                         return nil
                     }
                     let systemModifiers = event.modifierFlags.intersection([.command, .control, .option])
@@ -301,7 +318,7 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
                 let systemModifiers = event.modifierFlags.intersection([.command, .control, .option])
                 if systemModifiers.isEmpty,
                    event.modifierFlags.contains(.shift),
-                   self.viewer.currentItem != nil {
+                   viewer.currentItem != nil {
                     let character = event.characters
                     let characterIgnoringModifiers = event.charactersIgnoringModifiers
                     let isPlusKey = event.keyCode == 24 || event.keyCode == 69
@@ -309,22 +326,22 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
                     let isMinusKey = event.keyCode == 27 || event.keyCode == 78
                         || character == "_" || characterIgnoringModifiers == "-"
                     if isPlusKey {
-                        self.viewer.increaseImageSize()
+                        viewer.increaseImageSize()
                         return nil
                     }
                     if isMinusKey {
-                        self.viewer.decreaseImageSize()
+                        viewer.decreaseImageSize()
                         return nil
                     }
                 }
                 if modifiers.isEmpty,
-                   self.viewer.currentItem != nil,
+                   viewer.currentItem != nil,
                    event.charactersIgnoringModifiers == "0" {
-                    self.viewer.resetRotation()
+                    viewer.resetRotation()
                     return nil
                 }
 
-                if modifiers == .shift, self.viewer.viewMode == .waterfall {
+                if modifiers == .shift, viewer.viewMode == .waterfall {
                     switch event.charactersIgnoringModifiers?.lowercased() {
                     case "j":
                         self.scrollWaterfall(in: window, direction: 1)
@@ -339,71 +356,71 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
 
                 if modifiers.isEmpty {
                     switch event.charactersIgnoringModifiers?.lowercased() {
-                    case "h" where self.viewer.viewMode == .waterfall:
-                        self.viewer.navigateWaterfall(.left)
+                    case "h" where viewer.viewMode == .waterfall:
+                        viewer.navigateWaterfall(.left)
                         return nil
                     case "j":
-                        if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.down) }
-                        else { self.viewer.previous() }
+                        if viewer.viewMode == .waterfall { viewer.navigateWaterfall(.down) }
+                        else { viewer.previous() }
                         return nil
                     case "k":
-                        if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.up) }
-                        else { self.viewer.next() }
+                        if viewer.viewMode == .waterfall { viewer.navigateWaterfall(.up) }
+                        else { viewer.next() }
                         return nil
-                    case "l" where self.viewer.viewMode == .waterfall:
-                        self.viewer.navigateWaterfall(.right)
+                    case "l" where viewer.viewMode == .waterfall:
+                        viewer.navigateWaterfall(.right)
                         return nil
                     case "f":
                         self.toggleFullScreen()
                         return nil
-                    case "s" where self.viewer.currentItem != nil:
-                        self.viewer.setViewMode(.single)
+                    case "s" where viewer.currentItem != nil:
+                        viewer.setViewMode(.single)
                         return nil
-                    case "w" where self.viewer.currentItem != nil:
-                        self.viewer.setViewMode(.waterfall)
+                    case "w" where viewer.currentItem != nil:
+                        viewer.setViewMode(.waterfall)
                         return nil
                     default:
                         break
                     }
 
                     switch event.keyCode {
-                    case 53 where self.viewer.currentItem == nil: // Escape
+                    case 53 where viewer.currentItem == nil: // Escape
                         window.close()
                         return nil
                     case 123: // Left arrow
-                        if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.left) }
-                        else { self.viewer.previous() }
+                        if viewer.viewMode == .waterfall { viewer.navigateWaterfall(.left) }
+                        else { viewer.previous() }
                         return nil
                     case 124: // Right arrow
-                        if self.viewer.viewMode == .waterfall { self.viewer.navigateWaterfall(.right) }
-                        else { self.viewer.next() }
+                        if viewer.viewMode == .waterfall { viewer.navigateWaterfall(.right) }
+                        else { viewer.next() }
                         return nil
-                    case 126 where self.viewer.viewMode == .waterfall: // Up arrow
-                        self.viewer.navigateWaterfall(.up)
+                    case 126 where viewer.viewMode == .waterfall: // Up arrow
+                        viewer.navigateWaterfall(.up)
                         return nil
-                    case 116 where self.viewer.viewMode == .waterfall: // Page Up
-                        self.viewer.navigateWaterfall(.up)
+                    case 116 where viewer.viewMode == .waterfall: // Page Up
+                        viewer.navigateWaterfall(.up)
                         return nil
-                    case 125 where self.viewer.viewMode == .waterfall: // Down arrow
-                        self.viewer.navigateWaterfall(.down)
+                    case 125 where viewer.viewMode == .waterfall: // Down arrow
+                        viewer.navigateWaterfall(.down)
                         return nil
-                    case 121 where self.viewer.viewMode == .waterfall: // Page Down
-                        self.viewer.navigateWaterfall(.down)
+                    case 121 where viewer.viewMode == .waterfall: // Page Down
+                        viewer.navigateWaterfall(.down)
                         return nil
                     case 116: // Page Up
-                        self.viewer.previous()
+                        viewer.previous()
                         return nil
                     case 121: // Page Down
-                        self.viewer.next()
+                        viewer.next()
                         return nil
-                    case 36 where self.viewer.viewMode == .waterfall: // Return
-                        self.viewer.openWaterfallSelection()
+                    case 36 where viewer.viewMode == .waterfall: // Return
+                        viewer.openWaterfallSelection()
                         return nil
-                    case 76 where self.viewer.viewMode == .waterfall: // Keypad Enter
-                        self.viewer.openWaterfallSelection()
+                    case 76 where viewer.viewMode == .waterfall: // Keypad Enter
+                        viewer.openWaterfallSelection()
                         return nil
                     case 49: // Space
-                        self.viewer.toggleSlideshow()
+                        viewer.toggleSlideshow()
                         return nil
                     default:
                         break
@@ -610,6 +627,8 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
 }
 
 final class ViewerOverlayWindow: NSWindow, NSWindowDelegate {
+    let viewer = ViewerStore()
+    var onClose: (() -> Void)?
     private var resizeLayoutResumeTask: Task<Void, Never>?
     private var backdropWindow: ViewerBackdropWindow?
     private var backdropObservers: [NSObjectProtocol] = []
@@ -754,6 +773,8 @@ final class ViewerOverlayWindow: NSWindow, NSWindowDelegate {
         }
         backdropWindow = nil
         super.close()
+        viewer.closeImage()
+        onClose?()
     }
 
     private func synchronizeBackdropFrame() {

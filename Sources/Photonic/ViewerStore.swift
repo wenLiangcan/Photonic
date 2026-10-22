@@ -72,6 +72,7 @@ struct ZoomCommand: Equatable, Sendable {
 
 @MainActor
 final class ViewerStore: ObservableObject {
+    weak var window: NSWindow?
     @Published private(set) var items: [ViewerItem] = []
     @Published var currentIndex = 0
     @Published var comparisonItem: ViewerItem?
@@ -138,12 +139,12 @@ final class ViewerStore: ObservableObject {
         }
 
         openPanel = panel
-        NotificationCenter.default.post(name: .photonicFilePickerWillOpen, object: nil)
+        NotificationCenter.default.post(name: .photonicFilePickerWillOpen, object: window)
         panel.begin { [weak self, weak panel] response in
             guard let self else { return }
             defer {
                 if self.openPanel === panel { self.openPanel = nil }
-                NotificationCenter.default.post(name: .photonicFilePickerDidClose, object: nil)
+                NotificationCenter.default.post(name: .photonicFilePickerDidClose, object: self.window)
             }
             guard response == .OK, let panel else { return }
 
@@ -374,11 +375,10 @@ final class ViewerStore: ObservableObject {
     }
 
     private func focusViewerWindow() {
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
+            guard let window = self?.window else { return }
             NSApp.activate(ignoringOtherApps: true)
-            NSApp.windows
-                .first { $0 is ViewerOverlayWindow }?
-                .makeKeyAndOrderFront(nil)
+            window.makeKeyAndOrderFront(nil)
         }
     }
 
