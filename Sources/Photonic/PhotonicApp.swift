@@ -135,6 +135,9 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
                 .frame(minWidth: 760, minHeight: 520)
         )
         hostingView.translatesAutoresizingMaskIntoConstraints = false
+        // The title bar is hidden and transparent; don't let SwiftUI reserve
+        // its safe area, so the photo plane reaches the window's top edge.
+        hostingView.safeAreaRegions = []
         overlayRoot.addSubview(hostingView)
         NSLayoutConstraint.activate([
             hostingView.leadingAnchor.constraint(equalTo: overlayRoot.leadingAnchor),
@@ -260,13 +263,14 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
                 guard viewer.viewMode == .single else { return event }
 
                 // The app-level image zoom monitor must not steal wheel events
-                // from interactive sidebar content. Metadata pages consume the
-                // event here; MapKit receives its events normally.
-                if let pageWheelView = self.metadataPageWheelView(at: event, in: window) {
+                // from interactive sidebar content. MapKit receives its events
+                // normally; metadata pages (and the rest of the floating
+                // sidebar) consume the event here.
+                if self.isMapEvent(event, in: window) { return event }
+                if let pageWheelView = MetadataPageWheelView.view(at: event.locationInWindow, in: window) {
                     pageWheelView.handleWheelEvent(event)
                     return nil
                 }
-                if self.isMapEvent(event, in: window) { return event }
                 if let scrollView = self.scrollView(at: event, in: window) {
                     scrollView.scrollWheel(with: event)
                     return nil
@@ -447,22 +451,6 @@ final class PhotonicAppDelegate: NSObject, NSApplicationDelegate {
         guard let contentView = window.contentView else { return nil }
         let location = contentView.convert(event.locationInWindow, from: nil)
         return scrollView(at: location, inside: contentView)
-    }
-
-    private func metadataPageWheelView(at event: NSEvent, in window: NSWindow) -> MetadataPageWheelView? {
-        guard let contentView = window.contentView else { return nil }
-        let location = contentView.convert(event.locationInWindow, from: nil)
-        return metadataPageWheelView(at: location, inside: contentView)
-    }
-
-    private func metadataPageWheelView(at point: NSPoint, inside parent: NSView) -> MetadataPageWheelView? {
-        for subview in parent.subviews.reversed() where !subview.isHidden && subview.alphaValue > 0 {
-            let localPoint = subview.convert(point, from: parent)
-            guard subview.bounds.contains(localPoint) else { continue }
-            if let pageWheelView = subview as? MetadataPageWheelView { return pageWheelView }
-            if let nested = metadataPageWheelView(at: localPoint, inside: subview) { return nested }
-        }
-        return nil
     }
 
     private func scrollView(at point: NSPoint, inside parent: NSView) -> NSScrollView? {
@@ -658,7 +646,6 @@ final class ViewerOverlayWindow: NSWindow, NSWindowDelegate {
         collectionBehavior = [.fullScreenPrimary, .managed]
         animationBehavior = .documentWindow
         acceptsMouseMovedEvents = true
-        appearance = NSAppearance(named: .darkAqua)
         standardWindowButton(.closeButton)?.isHidden = true
         standardWindowButton(.miniaturizeButton)?.isHidden = true
         standardWindowButton(.zoomButton)?.isHidden = true
@@ -864,15 +851,13 @@ final class ViewerBackdropWindow: NSWindow {
         ignoresMouseEvents = true
         isReleasedWhenClosed = false
         collectionBehavior = [.fullScreenNone, .ignoresCycle]
-        appearance = NSAppearance(named: .darkAqua)
 
         effectView.frame = NSRect(origin: .zero, size: contentRect.size)
         effectView.autoresizingMask = [.width, .height]
         effectView.material = .underWindowBackground
         effectView.blendingMode = .behindWindow
-        effectView.state = .active
+        effectView.state = .followsWindowActiveState
         effectView.isEmphasized = true
-        effectView.appearance = NSAppearance(named: .darkAqua)
         effectView.alphaValue = 0.64
         contentView = effectView
     }

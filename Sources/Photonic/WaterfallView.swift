@@ -56,10 +56,13 @@ struct WaterfallView: View {
                         WaterfallViewportObserver { canvasMinY = $0 }
                     }
                     .padding(.horizontal, horizontalPadding)
-                    .padding(.top, 64)
+                    // Start the grid at the window's top edge, like the single
+                    // photo plane; the glass top chrome floats over the tiles.
+                    .padding(.top, horizontalPadding)
                     .padding(.bottom, 104)
                 }
                 .scrollIndicators(.visible)
+                .ignoresSafeArea()
                 .onChange(of: proxy.size) { _, _ in
                     scheduleResizeSettling(
                         at: desiredThumbnailPixelSize,
@@ -90,6 +93,7 @@ struct WaterfallView: View {
                     viewer.selectInWaterfall(destination)
                 }
             }
+            .ignoresSafeArea()
             .onAppear {
                 revealCurrentImage(using: scrollProxy)
             }

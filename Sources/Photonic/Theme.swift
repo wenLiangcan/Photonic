@@ -1,98 +1,89 @@
 import SwiftUI
 
 enum PhotonicTheme {
-    static let chrome = Color(red: 0.105, green: 0.11, blue: 0.125)
-    static let accent = Color(red: 0.38, green: 0.70, blue: 0.98)
+    static let accent = Color.accentColor
 }
 
 enum PhotonicTooltipPlacement {
     case above
     case below
-
-    var alignment: Alignment {
-        switch self {
-        case .above: .top
-        case .below: .bottom
-        }
-    }
-
-    var verticalOffset: CGFloat {
-        switch self {
-        case .above: -36
-        case .below: 36
-        }
-    }
 }
 
-private struct PhotonicTooltipModifier: ViewModifier {
-    let text: String
-    let placement: PhotonicTooltipPlacement
-
-    @State private var isPresented = false
-    @State private var presentationTask: Task<Void, Never>?
-
-    func body(content: Content) -> some View {
-        content
-            .accessibilityHint(text)
-            .onHover { hovering in
-                presentationTask?.cancel()
-                if hovering {
-                    presentationTask = Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(420))
-                        guard !Task.isCancelled else { return }
-                        withAnimation(.easeOut(duration: 0.12)) {
-                            isPresented = true
-                        }
-                    }
-                } else {
-                    withAnimation(.easeOut(duration: 0.10)) {
-                        isPresented = false
-                    }
-                }
-            }
-            .overlay(alignment: placement.alignment) {
-                if isPresented {
-                    tooltip
-                        .offset(y: placement.verticalOffset)
-                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                }
-            }
-            .zIndex(isPresented ? 100 : 0)
-            .onDisappear {
-                presentationTask?.cancel()
-                presentationTask = nil
-                isPresented = false
-            }
-    }
-
-    private var tooltip: some View {
-        Text(text)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.white.opacity(0.92))
-            .lineLimit(1)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: true, vertical: true)
-            .padding(.horizontal, 10)
-            .frame(height: 28)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .background(
-                PhotonicTheme.chrome.opacity(0.78),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(.white.opacity(0.14), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.38), radius: 8, y: 4)
-            .allowsHitTesting(false)
-    }
-}
-
+/// Keep native tooltips out of the view hierarchy so they don't clip or steal hits.
 extension View {
     func photonicTooltip(
         _ text: String,
         placement: PhotonicTooltipPlacement = .above
     ) -> some View {
-        modifier(PhotonicTooltipModifier(text: text, placement: placement))
+        help(text)
+    }
+
+    func photonicGlass<S: Shape>(in shape: S, interactive: Bool = false) -> some View {
+        modifier(PhotonicGlassModifier(shape: shape, interactive: interactive))
+    }
+
+    /// A floating glass widget, like iPadOS sidebar widgets. Content (including
+    /// opaque content such as maps) is clipped to the card shape and sits on glass.
+    func photonicGlassCard(cornerRadius: CGFloat = 24) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return clipShape(shape)
+            .photonicGlass(in: shape)
+            .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+    }
+
+    @ViewBuilder
+    func photonicGlassButton(prominent: Bool = false) -> some View {
+        if #available(macOS 26.0, *) {
+            if prominent {
+                buttonStyle(.glassProminent)
+            } else {
+                buttonStyle(.glass)
+            }
+        } else if prominent {
+            buttonStyle(.borderedProminent)
+        } else {
+            buttonStyle(.bordered)
+        }
+    }
+}
+
+private struct PhotonicGlassModifier<S: Shape>: ViewModifier {
+    let shape: S
+    var interactive = false
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        Group {
+            if #available(macOS 26.0, *), !reduceTransparency {
+                content.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+            } else if reduceTransparency {
+                content.background(Color(nsColor: .windowBackgroundColor), in: shape)
+            } else {
+                content.background(.regularMaterial, in: shape)
+            }
+        }
+        .overlay {
+            if contrast == .increased {
+                shape.stroke(.primary.opacity(0.5), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+/// Only wrap neighboring floating controls, never the photo canvas.
+struct PhotonicGlassGroup<Content: View>: View {
+    /// Glass shapes closer than this blend together; keep it below the layout
+    /// spacing when controls should read as separate circles.
+    var spacing: CGFloat = 12
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) { content }
+        } else {
+            content
+        }
     }
 }

@@ -18,13 +18,20 @@ struct PhotoInspectorSidebar: View {
     }
 
     var body: some View {
+        // Two independent floating widgets, iPadOS sidebar-widget style.
+        // Not wrapped in a glass container so the cards never morph together.
         VStack(spacing: 12) {
-            exifCard
+            photoInfo
                 .frame(maxHeight: 330)
-            locationCard
+            locationSection
                 .frame(maxHeight: .infinity)
         }
-        .frame(width: 338)
+        .frame(width: 320)
+        // Swallow wheel events over the rest of the sidebar (gaps, the
+        // no-location card) so they never zoom the photo underneath.
+        .background {
+            MetadataPageWheelCapture(onPageChange: nil)
+        }
         .task(id: item.id) {
             metadataPage = 0
             if let cached = ImageMetadataLoader.shared.cachedMetadata(for: item.url) {
@@ -37,8 +44,8 @@ struct PhotoInspectorSidebar: View {
         }
     }
 
-    private var exifCard: some View {
-        InspectorCard {
+    private var photoInfo: some View {
+        InspectorSection {
             VStack(alignment: .leading, spacing: 15) {
                 HStack {
                     Label("Photo Info", systemImage: "info.circle.fill")
@@ -47,16 +54,19 @@ struct PhotoInspectorSidebar: View {
                     Button(action: close) {
                         Image(systemName: "xmark")
                             .font(.system(size: 10, weight: .bold))
-                            .frame(width: 25, height: 25)
+                            .frame(width: 24, height: 24)
+                            .background(.primary.opacity(0.1), in: Circle())
+                            .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .background(.white.opacity(0.09), in: Circle())
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Close photo info")
                     .photonicTooltip("Close photo info", placement: .below)
                 }
 
                 Text(item.fileName)
                     .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.58))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
 
                 if let metadata {
@@ -72,11 +82,11 @@ struct PhotoInspectorSidebar: View {
                                 ForEach(pages[metadataPage]) { row in
                                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                                         Text(row.label)
-                                            .foregroundStyle(.white.opacity(0.44))
+                                            .foregroundStyle(.secondary)
                                             .fixedSize(horizontal: true, vertical: false)
                                         Spacer(minLength: 10)
                                         Text(row.value)
-                                            .foregroundStyle(.white.opacity(0.88))
+                                            .foregroundStyle(.primary)
                                             .multilineTextAlignment(.trailing)
                                             .lineLimit(2)
                                             .fixedSize(horizontal: false, vertical: true)
@@ -85,7 +95,7 @@ struct PhotoInspectorSidebar: View {
                                     }
                                     .font(.system(size: 11.5))
                                     .padding(.vertical, 5)
-                                    Divider().overlay(.white.opacity(0.06))
+                                    Divider()
                                 }
                                 Spacer(minLength: 0)
                             }
@@ -108,6 +118,7 @@ struct PhotoInspectorSidebar: View {
                             )
 
                             if pages.count > 1 {
+                                // Widget-style page dots.
                                 HStack(spacing: 7) {
                                     ForEach(pages.indices, id: \.self) { pageIndex in
                                         Button {
@@ -116,25 +127,24 @@ struct PhotoInspectorSidebar: View {
                                             }
                                         } label: {
                                             Circle()
-                                                .fill(.white.opacity(metadataPage == pageIndex ? 0.92 : 0.28))
+                                                .fill(.primary.opacity(metadataPage == pageIndex ? 0.85 : 0.25))
                                                 .frame(width: 6, height: 6)
                                                 .contentShape(Circle().inset(by: -5))
                                         }
                                         .buttonStyle(.plain)
-                                        .photonicTooltip("Photo info page \(pageIndex + 1) of \(pages.count)")
+                                        .help("Photo info page \(pageIndex + 1) of \(pages.count)")
                                     }
                                 }
                                 .frame(height: 10)
-                                .accessibilityElement(children: .contain)
-                                .accessibilityLabel("Photo info pages")
-                            }
-                        }
-                        .background {
-                            MetadataPageWheelCapture { direction in
-                                let destination = metadataPage + direction
-                                guard pages.indices.contains(destination) else { return }
-                                withAnimation(.easeOut(duration: 0.18)) {
-                                    metadataPage = destination
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel("Photo info page")
+                                .accessibilityValue("\(metadataPage + 1) of \(pages.count)")
+                                .accessibilityAdjustableAction { direction in
+                                    switch direction {
+                                    case .increment: metadataPage = min(metadataPage + 1, pages.count - 1)
+                                    case .decrement: metadataPage = max(metadataPage - 1, 0)
+                                    @unknown default: break
+                                    }
                                 }
                             }
                         }
@@ -146,10 +156,24 @@ struct PhotoInspectorSidebar: View {
                 }
             }
         }
+        // Cover the whole Photo Info widget, not only the rows, so the wheel
+        // pages anywhere over the card instead of falling through to zoom.
+        .background {
+            MetadataPageWheelCapture(onPageChange: changeMetadataPage)
+        }
     }
 
-    private var locationCard: some View {
-        InspectorCard(padding: 0) {
+    private func changeMetadataPage(by direction: Int) {
+        guard let metadata else { return }
+        let destination = metadataPage + direction
+        guard metadataPages(metadata.rows).indices.contains(destination) else { return }
+        withAnimation(.easeOut(duration: 0.18)) {
+            metadataPage = destination
+        }
+    }
+
+    private var locationSection: some View {
+        InspectorSection(padding: 0) {
             if let location = metadata?.location {
                 ZStack(alignment: .topLeading) {
                     PhotoLocationMap(location: location)
@@ -158,10 +182,10 @@ struct PhotoInspectorSidebar: View {
                             .font(.system(size: 13, weight: .semibold))
                         Text(coordinateText(location))
                             .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.64))
+                            .foregroundStyle(.secondary)
                     }
                     .padding(12)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .photonicGlass(in: RoundedRectangle(cornerRadius: 12))
                     .padding(12)
                 }
             } else if metadata != nil {
@@ -193,7 +217,7 @@ struct PhotoInspectorSidebar: View {
 }
 
 private struct MetadataPageWheelCapture: NSViewRepresentable {
-    let onPageChange: (Int) -> Void
+    let onPageChange: ((Int) -> Void)?
 
     func makeNSView(context: Context) -> MetadataPageWheelView {
         let view = MetadataPageWheelView()
@@ -207,7 +231,37 @@ private struct MetadataPageWheelCapture: NSViewRepresentable {
 }
 
 final class MetadataPageWheelView: NSView {
+    /// `nil` marks a passive region that only blocks image zoom.
     var onPageChange: ((Int) -> Void)?
+
+    /// Live capture views. The app's wheel monitor locates them by window
+    /// geometry, because Liquid Glass hosts SwiftUI content in layers whose
+    /// intermediate views don't report the card bounds to a subview walk.
+    private static let liveViews = NSHashTable<MetadataPageWheelView>.weakObjects()
+
+    /// Returns the capture view under `locationInWindow`, preferring the
+    /// active page switcher over passive blocking regions.
+    static func view(at locationInWindow: NSPoint, in window: NSWindow) -> MetadataPageWheelView? {
+        let hits = liveViews.allObjects.filter { view in
+            view.window === window
+                && !view.isHiddenOrHasHiddenAncestor
+                && view.convert(view.bounds, to: nil).contains(locationInWindow)
+        }
+        return hits.first { $0.onPageChange != nil } ?? hits.first
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            Self.liveViews.remove(self)
+            resetGestureState()
+        } else {
+            Self.liveViews.add(self)
+        }
+    }
+
+    // Purely a wheel target; clicks go to the controls above or the canvas.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     private var accumulatedDelta = 0.0
     private var didChangePage = false
@@ -215,6 +269,7 @@ final class MetadataPageWheelView: NSView {
     private var resetTask: Task<Void, Never>?
 
     func handleWheelEvent(_ event: NSEvent) {
+        guard onPageChange != nil else { return }
         let rawX = Double(event.scrollingDeltaX)
         let rawY = Double(event.scrollingDeltaY)
         guard max(abs(rawX), abs(rawY)) > 0.001 else { return }
@@ -305,7 +360,7 @@ private struct PhotoLocationMap: View {
     }
 }
 
-private struct InspectorCard<Content: View>: View {
+private struct InspectorSection<Content: View>: View {
     var padding: CGFloat = 18
     @ViewBuilder let content: Content
 
@@ -313,18 +368,7 @@ private struct InspectorCard<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background {
-                ZStack {
-                    Rectangle().fill(.ultraThinMaterial)
-                    PhotonicTheme.chrome.opacity(0.50)
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(.white.opacity(0.13), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.34), radius: 20, y: 10)
+            .photonicGlassCard(cornerRadius: 24)
     }
 }
 
@@ -337,17 +381,17 @@ private struct InspectorEmptyState: View {
         VStack(spacing: 9) {
             Image(systemName: icon)
                 .font(.system(size: 25, weight: .ultraLight))
-                .foregroundStyle(.white.opacity(0.40))
+                .foregroundStyle(.secondary)
             Text(title)
                 .font(.system(size: 12, weight: .medium))
             if let subtitle {
                 Text(subtitle)
                     .font(.system(size: 10.5))
-                    .foregroundStyle(.white.opacity(0.42))
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
         }
-        .foregroundStyle(.white.opacity(0.68))
+        .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

@@ -5,9 +5,8 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            // The blur is supplied by the AppKit NSVisualEffectView behind this
-            // transparent hosting view. This layer only adds a restrained dim.
-            Color.black.opacity(viewer.currentItem == nil ? 0.20 : 0.30)
+            // Keep the media plane quiet while chrome follows the system appearance.
+            Color(nsColor: .windowBackgroundColor).opacity(0.45)
                 .ignoresSafeArea()
 
             if viewer.currentItem != nil {
@@ -18,7 +17,7 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
-        .preferredColorScheme(.dark)
+        .ignoresSafeArea()
         .animation(.easeOut(duration: 0.14), value: viewer.currentItem != nil)
     }
 }
@@ -29,24 +28,16 @@ private struct EmptyViewer: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             VStack(spacing: 18) {
-                ZStack {
-                    Circle()
-                        .fill(.white.opacity(0.055))
-                        .frame(width: 108, height: 108)
-                    Circle()
-                        .stroke(.white.opacity(0.10), lineWidth: 1)
-                        .frame(width: 108, height: 108)
-                    Image(systemName: "photo")
-                        .font(.system(size: 43, weight: .ultraLight))
-                        .foregroundStyle(.white.opacity(0.88))
-                }
+                Image(systemName: "photo")
+                    .font(.system(size: 56, weight: .light))
+                    .foregroundStyle(.secondary)
 
                 VStack(spacing: 7) {
                     Text("Open an image or folder")
                         .font(.system(size: 22, weight: .medium))
                     Text("Choose a photograph or a folder to begin")
                         .font(.system(size: 12.5))
-                        .foregroundStyle(.white.opacity(0.48))
+                        .foregroundStyle(.secondary)
                 }
 
                 Button(action: { viewer.presentOpenPanel() }) {
@@ -54,13 +45,12 @@ private struct EmptyViewer: View {
                         .font(.system(size: 12.5, weight: .medium))
                         .padding(.horizontal, 4)
                 }
-                .buttonStyle(.borderedProminent)
+                .photonicGlassButton(prominent: true)
                 .controlSize(.large)
-                .tint(.white.opacity(0.16))
 
                 Text("⌘O")
                     .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.28))
+                    .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(50)
@@ -69,13 +59,10 @@ private struct EmptyViewer: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .semibold))
                     .frame(width: 30, height: 30)
-                    .background(.black.opacity(0.24), in: Circle())
-                    .overlay { Circle().stroke(.white.opacity(0.10), lineWidth: 1) }
             }
-            .buttonStyle(.plain)
-            .focusable(false)
-            .focusEffectDisabled()
-            .foregroundStyle(.white.opacity(0.82))
+            .photonicGlassButton()
+            .buttonBorderShape(.circle)
+            .accessibilityLabel("Close window")
             .photonicTooltip("Close window", placement: .below)
             .padding(18)
         }

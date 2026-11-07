@@ -188,6 +188,7 @@ struct PhotoViewer: View {
     @StateObject private var controlVisibility = ControlVisibilityController()
     @State private var isWaterfallSizeAdjusting = false
     @State private var isInspectorVisible = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var viewerHasFocus: Bool
 
     var body: some View {
@@ -199,11 +200,12 @@ struct PhotoViewer: View {
                 .frame(maxHeight: .infinity, alignment: .top)
 
             VStack(spacing: 0) {
-                TopChrome()
+                TopChrome(isInspectorVisible: $isInspectorVisible)
                     .onHover(perform: updateControlHover)
                 Spacer()
                 FloatingDock(isWaterfallSizeAdjusting: $isWaterfallSizeAdjusting)
-                    .padding(.bottom, 20)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 18)
                     .onHover(perform: updateControlHover)
             }
             .opacity(controlVisibility.isVisible ? 1 : 0)
@@ -222,6 +224,8 @@ struct PhotoViewer: View {
                 .allowsHitTesting(controlVisibility.isVisible)
             }
 
+            // Floating widget stack, like iPadOS sidebar widgets, rather than
+            // a full-height inspector column that would crop the photo.
             if viewer.viewMode == .single,
                !viewer.isComparing,
                isInspectorVisible,
@@ -232,9 +236,9 @@ struct PhotoViewer: View {
                         isInspectorVisible = false
                     }
                 }
-                .padding(.top, 62)
-                .padding(.trailing, 18)
-                .padding(.bottom, 94)
+                .padding(.top, 60)
+                .padding(.trailing, 14)
+                .padding(.bottom, 88)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
                 .zIndex(8)
             }
@@ -274,11 +278,11 @@ struct PhotoViewer: View {
             }
         }
         .ignoresSafeArea(.container, edges: .top)
-        .animation(.easeOut(duration: 0.28), value: controlVisibility.isVisible)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.28), value: controlVisibility.isVisible)
         .animation(.easeOut(duration: 0.18), value: viewer.isShortcutReferenceVisible)
         .animation(.easeOut(duration: 0.18), value: viewer.navigationLoopFeedback?.id)
         .animation(.easeOut(duration: 0.18), value: viewer.slideshowFeedback?.id)
-        .animation(.smooth(duration: 0.28), value: isInspectorVisible)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.28), value: isInspectorVisible)
         .onContinuousHover { phase in
             switch phase {
             case .active:
@@ -415,9 +419,7 @@ struct PhotoViewer: View {
                         comparisonPane(item: comparison, side: .secondary, rotationDegrees: 0)
                     }
                 }
-                // Use ContentView's shared backdrop, including the side margins.
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .padding(.horizontal, 24)
+                // Both images share the continuous media plane.
             } else {
                 ImageCanvas(
                     item: item,
@@ -460,22 +462,11 @@ private struct NavigationLoopFeedbackView: View {
                 .foregroundStyle(PhotonicTheme.accent)
             Text(feedback.destination == .first ? "First Image" : "Last Image")
                 .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(.white.opacity(0.88))
+                .foregroundStyle(.primary)
         }
         .padding(.horizontal, 14)
         .frame(height: 36)
-        .background {
-            ZStack {
-                DockBlurView()
-                PhotonicTheme.chrome.opacity(0.62)
-            }
-            .clipShape(Capsule())
-        }
-        .overlay {
-            Capsule()
-                .stroke(.white.opacity(0.13), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.38), radius: 14, y: 7)
+        .photonicGlass(in: Capsule())
         .allowsHitTesting(false)
         .accessibilityLabel(
             feedback.destination == .first ? "First Image" : "Last Image"
@@ -493,21 +484,11 @@ private struct SlideshowFeedbackView: View {
                 .foregroundStyle(PhotonicTheme.accent)
             Text(feedback.state == .started ? "Slideshow Started" : "Slideshow Stopped")
                 .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(.white.opacity(0.88))
+                .foregroundStyle(.primary)
         }
         .padding(.horizontal, 14)
         .frame(height: 36)
-        .background {
-            ZStack {
-                DockBlurView()
-                PhotonicTheme.chrome.opacity(0.62)
-            }
-            .clipShape(Capsule())
-        }
-        .overlay {
-            Capsule().stroke(.white.opacity(0.13), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.38), radius: 14, y: 7)
+        .photonicGlass(in: Capsule())
         .allowsHitTesting(false)
     }
 }
@@ -532,7 +513,7 @@ private struct ShortcutReferenceOverlay: View {
                             .font(.system(size: 21, weight: .semibold))
                         Text("Navigate Photonic without leaving the image")
                             .font(.system(size: 11.5))
-                            .foregroundStyle(.white.opacity(0.52))
+                            .foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button {
@@ -542,8 +523,9 @@ private struct ShortcutReferenceOverlay: View {
                             .font(.system(size: 11, weight: .semibold))
                             .frame(width: 28, height: 28)
                     }
-                    .buttonStyle(.plain)
-                    .background(.white.opacity(0.08), in: Circle())
+                    .photonicGlassButton()
+                    .buttonBorderShape(.circle)
+                    .accessibilityLabel("Close keyboard shortcuts")
                 }
 
                 HStack(alignment: .top, spacing: 34) {
@@ -569,7 +551,7 @@ private struct ShortcutReferenceOverlay: View {
                     ])
                 }
 
-                Divider().overlay(.white.opacity(0.08))
+                Divider()
 
                 HStack(spacing: 20) {
                     ShortcutInline(keys: "?", label: "Toggle shortcuts")
@@ -579,18 +561,7 @@ private struct ShortcutReferenceOverlay: View {
             }
             .padding(26)
             .frame(width: 610)
-            .background {
-                ZStack {
-                    DockBlurView()
-                    PhotonicTheme.chrome.opacity(0.58)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(.white.opacity(0.14), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.55), radius: 38, y: 18)
+            .photonicGlass(in: RoundedRectangle(cornerRadius: 20))
         }
         .ignoresSafeArea()
     }
@@ -613,7 +584,7 @@ private struct ShortcutSection: View {
                         .frame(width: 86, alignment: .leading)
                     Text(row.1)
                         .font(.system(size: 11.5))
-                        .foregroundStyle(.white.opacity(0.72))
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -630,7 +601,7 @@ private struct ShortcutInline: View {
             ShortcutKey(keys)
             Text(label)
                 .font(.system(size: 10.5))
-                .foregroundStyle(.white.opacity(0.56))
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -645,59 +616,80 @@ private struct ShortcutKey: View {
     var body: some View {
         Text(text)
             .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-            .foregroundStyle(.white.opacity(0.88))
+            .foregroundStyle(.primary)
             .padding(.horizontal, 8)
             .frame(minHeight: 24)
-            .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(.white.opacity(0.10), lineWidth: 1)
+                    .stroke(.separator, lineWidth: 1)
             }
     }
 }
 
 private struct TopChrome: View {
     @EnvironmentObject private var viewer: ViewerStore
+    @Binding var isInspectorVisible: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button { performWidgetAction { NSApp.keyWindow?.close() } } label: { Image(systemName: "xmark") }
-                .photonicTooltip("Close window", placement: .below)
-            Button { performWidgetAction { viewer.presentOpenPanel() } } label: { Image(systemName: "folder") }
-                .photonicTooltip("Open image", placement: .below)
+        // Books-style chrome: compact circles hugging the window corners and a
+        // small centered title pill, all sitting in the former title bar band.
+        PhotonicGlassGroup(spacing: 4) {
+            HStack(alignment: .center, spacing: 8) {
+                chromeButton("Close window", icon: "xmark") { viewer.window?.close() }
+                chromeButton("Open image or folder", icon: "folder") { viewer.presentOpenPanel() }
 
-            Spacer()
+                Spacer(minLength: 12)
 
-            VStack(spacing: 1) {
-                Text(titleText)
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-                Text(detailText)
-                    .font(.system(size: 9.5, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.40))
+                HStack(spacing: 6) {
+                    Text(titleText)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if !detailText.isEmpty {
+                        Text(detailText)
+                            .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                .padding(.horizontal, 12)
+                .frame(height: 26)
+                .frame(maxWidth: 420)
+                .fixedSize(horizontal: false, vertical: true)
+                .photonicGlass(in: Capsule())
+                .accessibilityElement(children: .combine)
+
+                Spacer(minLength: 12)
+
+                if viewer.viewMode == .single && !viewer.isComparing {
+                    chromeButton("Photo info", icon: "info", active: isInspectorVisible) {
+                        isInspectorVisible.toggle()
+                    }
+                }
+                chromeButton("Toggle full screen (F)", icon: "arrow.up.left.and.arrow.down.right") {
+                    viewer.window?.toggleFullScreen(nil)
+                }
+                chromeButton("Reveal in Finder", icon: "arrow.right.circle", action: viewer.revealInFinder)
             }
-            .frame(minWidth: 180)
-
-            Spacer()
-
-            Button { performWidgetAction { NSApp.keyWindow?.toggleFullScreen(nil) } } label: {
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-            }
-            .photonicTooltip("Toggle full screen (F)", placement: .below)
-            Button { performWidgetAction(viewer.revealInFinder) } label: { Image(systemName: "arrow.right.circle") }
-                .photonicTooltip("Reveal in Finder", placement: .below)
         }
-        .buttonStyle(ChromeButtonStyle())
-        .foregroundStyle(.white.opacity(0.84))
-        .padding(.horizontal, 16)
-        .frame(height: 48)
-        .background(
-            LinearGradient(
-                colors: [.black.opacity(0.42), .black.opacity(0.08)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .frame(maxWidth: .infinity, alignment: .top)
+    }
+
+    private func chromeButton(_ title: String, icon: String, active: Bool = false, action: @escaping () -> Void) -> some View {
+        Button { performWidgetAction(action) } label: {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 18, height: 18)
+        }
+        .photonicGlassButton(prominent: active)
+        .buttonBorderShape(.circle)
+        .controlSize(.large)
+        .accessibilityLabel(title)
+        .help(title)
     }
 
     private var titleText: String {
@@ -712,43 +704,65 @@ private struct TopChrome: View {
     }
 }
 
+/// A floating media navigation bar: one native glass surface, standard controls inside.
 private struct FloatingDock: View {
     @EnvironmentObject private var viewer: ViewerStore
     @Binding var isWaterfallSizeAdjusting: Bool
 
     var body: some View {
-        HStack(spacing: 5) {
-            DockButton(
-                icon: "photo",
-                help: "Single image view (S)",
-                active: viewer.viewMode == .single
-            ) { viewer.setViewMode(.single) }
-            DockButton(
-                icon: "square.grid.2x2",
-                help: "Waterfall view (W)",
-                active: viewer.viewMode == .waterfall
-            ) { viewer.setViewMode(.waterfall) }
+        PhotonicGlassGroup {
+            ViewThatFits(in: .horizontal) {
+                bar(compact: false)
+                bar(compact: true)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Photo navigation")
+    }
+
+    private func bar(compact: Bool) -> some View {
+        HStack(spacing: 2) {
+            DockButton(icon: "photo", help: "Single image view (S)", active: viewer.viewMode == .single) {
+                viewer.setViewMode(.single)
+            }
+            DockButton(icon: "square.grid.2x2", help: "Waterfall view (W)", active: viewer.viewMode == .waterfall) {
+                viewer.setViewMode(.waterfall)
+            }
+
             DockDivider()
 
             if viewer.viewMode == .waterfall {
                 WaterfallSizeControl(
                     size: $viewer.waterfallImageSize,
-                    isAdjusting: $isWaterfallSizeAdjusting
+                    isAdjusting: $isWaterfallSizeAdjusting,
+                    compact: compact
                 )
+                .padding(.horizontal, 8)
+            } else if compact {
+                DockButton(icon: "chevron.left", help: "Previous image", action: viewer.previous)
+                DockButton(icon: "chevron.right", help: "Next image", action: viewer.next)
+                Menu {
+                    photoActions
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 16, weight: .medium))
+                        .frame(width: 40, height: 40)
+                        .contentShape(Circle())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel("Photo actions")
+                .help("Photo actions")
             } else {
                 DockButton(icon: "minus.magnifyingglass", help: "Zoom out") { viewer.requestZoom(.zoomOut) }
                 DockButton(icon: "arrow.down.right.and.arrow.up.left", help: "Fit to window") { viewer.requestZoom(.fit) }
                 DockButton(icon: "plus.magnifyingglass", help: "Zoom in") { viewer.requestZoom(.zoomIn) }
                 DockDivider()
-                if viewer.rotationQuarterTurns != 0 {
-                    DockButton(
-                        icon: "arrow.counterclockwise",
-                        help: "Reset rotation (0)",
-                        active: true,
-                        action: viewer.resetRotation
-                    )
-                    .transition(.scale.combined(with: .opacity))
-                }
+                // Reserve the reset slot so Rotate never jumps as the image rotates.
+                DockButton(icon: "arrow.counterclockwise", help: "Reset rotation (0)", action: viewer.resetRotation)
+                    .disabled(viewer.rotationQuarterTurns == 0)
                 DockButton(icon: "rotate.right", help: "Rotate clockwise", action: viewer.rotateClockwise)
                 DockButton(
                     icon: viewer.isSlideshowRunning ? "pause.fill" : "play.fill",
@@ -756,78 +770,69 @@ private struct FloatingDock: View {
                     active: viewer.isSlideshowRunning,
                     action: viewer.toggleSlideshow
                 )
+                .disabled(viewer.items.count < 2)
                 DockDivider()
                 DockButton(icon: "rectangle.split.2x1", help: "Compare side by side", active: viewer.isComparing) {
                     viewer.toggleComparison()
                 }
                 if viewer.isComparing {
-                    DockButton(
-                        icon: "arrow.left.arrow.right",
-                        help: "Swap comparison positions",
-                        action: viewer.swapComparisonSides
-                    )
-                    .transition(.scale.combined(with: .opacity))
+                    DockButton(icon: "arrow.left.arrow.right", help: "Swap comparison positions", action: viewer.swapComparisonSides)
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .frame(height: 54)
-        .background {
-            ZStack {
-                DockBlurView()
-                PhotonicTheme.chrome.opacity(0.64)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .photonicGlass(in: Capsule(), interactive: true)
+        .fixedSize()
+    }
+
+    @ViewBuilder private var photoActions: some View {
+        Button("Zoom in", systemImage: "plus.magnifyingglass") { performWidgetAction { viewer.requestZoom(.zoomIn) } }
+        Button("Zoom out", systemImage: "minus.magnifyingglass") { performWidgetAction { viewer.requestZoom(.zoomOut) } }
+        Button("Fit to window", systemImage: "arrow.down.right.and.arrow.up.left") { performWidgetAction { viewer.requestZoom(.fit) } }
+        Divider()
+        Button("Rotate clockwise", systemImage: "rotate.right") { performWidgetAction(viewer.rotateClockwise) }
+        Button("Reset rotation", systemImage: "arrow.counterclockwise") { performWidgetAction(viewer.resetRotation) }
+            .disabled(viewer.rotationQuarterTurns == 0)
+        Button(viewer.isSlideshowRunning ? "Pause slideshow" : "Start slideshow", systemImage: viewer.isSlideshowRunning ? "pause.fill" : "play.fill") {
+            performWidgetAction(viewer.toggleSlideshow)
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .stroke(.white.opacity(0.12), lineWidth: 1)
+        .disabled(viewer.items.count < 2)
+        Divider()
+        Toggle("Compare side by side", systemImage: "rectangle.split.2x1", isOn: Binding(
+            get: { viewer.isComparing },
+            set: { _ in performWidgetAction(viewer.toggleComparison) }
+        ))
+        if viewer.isComparing {
+            Button("Swap comparison positions", systemImage: "arrow.left.arrow.right") { performWidgetAction(viewer.swapComparisonSides) }
         }
-        .shadow(color: .black.opacity(0.48), radius: 20, y: 8)
-        .fixedSize(horizontal: true, vertical: false)
-        // Adding the reset button contributes 31 points plus the HStack's
-        // 5-point spacing. Shift by half of that growth so Rotate stays fixed.
-        .offset(x: viewer.viewMode == .single && viewer.rotationQuarterTurns != 0 ? -18 : 0)
-        .animation(.easeOut(duration: 0.16), value: viewer.rotationQuarterTurns != 0)
     }
 }
 
 private struct WaterfallSizeControl: View {
     @Binding var size: Double
     @Binding var isAdjusting: Bool
+    var compact = false
 
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: "photo")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.50))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Slider(value: $size, in: 120...420) { editing in
                 isAdjusting = editing
             }
-                .controlSize(.small)
-                .tint(PhotonicTheme.accent)
-                .frame(width: 150)
-                .photonicTooltip("Image size")
+            .controlSize(.regular)
+            .frame(width: compact ? 90 : 150)
+            .accessibilityLabel("Image size")
+            .help("Image size")
             Image(systemName: "photo")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.white.opacity(0.72))
+                .font(.system(size: 16))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
         }
-        .padding(.horizontal, 5)
     }
-}
-
-private struct DockBlurView: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .hudWindow
-        view.blendingMode = .withinWindow
-        view.state = .active
-        view.isEmphasized = true
-        view.appearance = NSAppearance(named: .darkAqua)
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
 private struct ImageCanvas: View {
@@ -866,7 +871,7 @@ private struct ImageCanvas: View {
                         )
                 } else {
                     ContentUnavailableView("Unable to display image", systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.white.opacity(0.65))
+                        .foregroundStyle(.secondary)
                 }
             }
             .contentShape(Rectangle())
@@ -1120,51 +1125,64 @@ private final class WindowDragView: NSView {
     }
 }
 
+/// A plain glyph inside the dock's single glass capsule. Only a soft hover
+/// highlight and an accent tint for "on" states — no per-button chrome.
 private struct DockButton: View {
     let icon: String
     let help: String
     var active = false
     let action: () -> Void
 
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+
     var body: some View {
-        Button {
-            performWidgetAction(action)
-        } label: {
+        Button { performWidgetAction(action) } label: {
             Image(systemName: icon)
-                .font(.system(size: 13, weight: .medium))
-                .frame(width: 31, height: 31)
-                .background(active ? .white.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 7))
+                .font(.system(size: 16, weight: .medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(active ? AnyShapeStyle(PhotonicTheme.accent) : AnyShapeStyle(.primary))
+                .frame(width: 40, height: 40)
+                .background {
+                    Circle()
+                        .fill(.primary.opacity(active ? 0.12 : (hovering && isEnabled ? 0.08 : 0)))
+                }
+                .contentShape(Circle())
+                .opacity(isEnabled ? 1 : 0.3)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(active ? PhotonicTheme.accent : .white.opacity(0.78))
-        .photonicTooltip(help)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .accessibilityLabel(help)
+        .accessibilityAddTraits(active ? .isSelected : [])
+        .help(help)
     }
 }
 
 private struct DockDivider: View {
     var body: some View {
-        Rectangle().fill(.white.opacity(0.12)).frame(width: 1, height: 24).padding(.horizontal, 4)
+        Capsule()
+            .fill(.primary.opacity(0.18))
+            .frame(width: 1, height: 22)
+            .padding(.horizontal, 6)
     }
 }
 
 private struct NavigationButton: View {
     let icon: String
     let action: () -> Void
-    @State private var hovering = false
 
     var body: some View {
-        Button {
-            performWidgetAction(action)
-        } label: {
+        Button { performWidgetAction(action) } label: {
             Image(systemName: icon)
-                .font(.system(size: 19, weight: .semibold))
-                .frame(width: 42, height: 60)
-                .background(.black.opacity(hovering ? 0.46 : 0.22), in: RoundedRectangle(cornerRadius: 11))
-                .overlay { RoundedRectangle(cornerRadius: 11).stroke(.white.opacity(hovering ? 0.16 : 0.06)) }
+                .font(.system(size: 18, weight: .semibold))
+                .frame(width: 28, height: 36)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(.white.opacity(hovering ? 0.96 : 0.62))
-        .onHover { hovering = $0 }
+        .photonicGlassButton()
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+        .accessibilityLabel(icon == "chevron.left" ? "Previous image" : "Next image")
+        .help(icon == "chevron.left" ? "Previous image" : "Next image")
     }
 }
 
@@ -1191,24 +1209,16 @@ private struct ComparisonLabel: View {
                 Text(name).lineLimit(1)
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.48))
+                    .foregroundStyle(.secondary)
             }
             .font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(.white.opacity(0.74))
+            .foregroundStyle(.secondary)
             .padding(9)
-            .background(.black.opacity(0.34), in: RoundedRectangle(cornerRadius: 8))
         }
-        .buttonStyle(.plain)
+        .photonicGlassButton()
+        .buttonBorderShape(.capsule)
         .photonicTooltip("Choose a new image for side \(letter)", placement: .below)
-        .padding(12)
-    }
-}
-
-private struct ChromeButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .medium))
-            .frame(width: 28, height: 28)
-            .background(.white.opacity(configuration.isPressed ? 0.14 : 0.06), in: Circle())
+        .padding(.horizontal, 12)
+        .padding(.top, 54)
     }
 }
