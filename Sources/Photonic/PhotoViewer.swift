@@ -846,6 +846,8 @@ private struct ImageCanvas: View {
     @State private var offset = CGSize.zero
     @State private var magnifyBase: Double?
     @State private var dragBase: CGSize?
+    @State private var isZoomIndicatorVisible = false
+    @State private var zoomIndicatorToken = 0
 
     var body: some View {
         GeometryReader { proxy in
@@ -873,6 +875,12 @@ private struct ImageCanvas: View {
                     ContentUnavailableView("Unable to display image", systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.secondary)
                 }
+
+                if isZoomIndicatorVisible,
+                   let percent = zoomPercentage(in: proxy.size) {
+                    ZoomPercentageIndicator(percent: percent)
+                        .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                }
             }
             .contentShape(Rectangle())
             .gesture(panGesture(in: proxy.size))
@@ -896,11 +904,13 @@ private struct ImageCanvas: View {
                 switch command.action {
                 case .zoomIn:
                     withAnimation(.snappy(duration: 0.26)) { zoom = min(zoom * 1.35, 8) }
+                    showZoomIndicator()
                 case .zoomOut:
                     withAnimation(.snappy(duration: 0.26)) {
                         zoom = max(zoom / 1.35, 0.35)
                         if zoom <= 1 { offset = .zero }
                     }
+                    showZoomIndicator()
                 case .fit:
                     withAnimation(.snappy(duration: 0.26)) {
                         // The base image size is already the opening size: fit large
@@ -909,6 +919,7 @@ private struct ImageCanvas: View {
                         zoom = 1
                         offset = .zero
                     }
+                    showZoomIndicator()
                 case .reset:
                     zoom = 1
                     offset = .zero
@@ -920,7 +931,14 @@ private struct ImageCanvas: View {
                     withAnimation(.interactiveSpring(response: 0.16, dampingFraction: 0.86, blendDuration: 0.08)) {
                         applyZoom(target, anchoredAt: location, in: proxy.size)
                     }
+                    showZoomIndicator()
                 }
+            }
+            .task(id: zoomIndicatorToken) {
+                guard isZoomIndicatorVisible else { return }
+                try? await Task.sleep(for: .seconds(1.1))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.25)) { isZoomIndicatorVisible = false }
             }
             .onChange(of: item.id) { resetView() }
             .onChange(of: rotationDegrees) {
@@ -935,6 +953,7 @@ private struct ImageCanvas: View {
             .onChanged { value in
                 if magnifyBase == nil { magnifyBase = zoom }
                 zoom = min(max((magnifyBase ?? zoom) * value.magnification, 0.35), 8)
+                showZoomIndicator()
             }
             .onEnded { _ in
                 magnifyBase = nil
@@ -944,6 +963,7 @@ private struct ImageCanvas: View {
                         offset = .zero
                     }
                 }
+                showZoomIndicator()
             }
     }
 
@@ -980,6 +1000,7 @@ private struct ImageCanvas: View {
     }
 
     private func toggleZoom(at location: CGPoint, in size: CGSize) {
+        defer { showZoomIndicator() }
         withAnimation(.snappy(duration: 0.32)) {
             if zoom > 1.01 {
                 zoom = 1
@@ -1099,12 +1120,48 @@ private struct ImageCanvas: View {
         offset = .zero
         magnifyBase = nil
         dragBase = nil
+        isZoomIndicatorVisible = false
+    }
+
+    /// Shows the transient zoom percentage and restarts its auto-hide timer.
+    private func showZoomIndicator() {
+        if !isZoomIndicatorVisible {
+            withAnimation(.easeOut(duration: 0.15)) { isZoomIndicatorVisible = true }
+        }
+        zoomIndicatorToken &+= 1
+    }
+
+    /// Zoom relative to the image's native pixels, so 100% means one image
+    /// pixel per screen pixel (matching the 1:1 opening size of small images).
+    private func zoomPercentage(in canvasSize: CGSize) -> Int? {
+        guard let image = ImageCache.shared.image(for: item.url), displayScale > 0 else { return nil }
+        let pixelWidth = imagePixelSize(image).width
+        guard pixelWidth > 0 else { return nil }
+        let baseWidth = baseImageSize(for: image, in: canvasSize).width
+        let scale = baseWidth / (pixelWidth / displayScale) * zoom
+        return Int((scale * 100).rounded())
     }
 
     private func recenterAfterRotation() {
         offset = .zero
         magnifyBase = nil
         dragBase = nil
+    }
+}
+
+private struct ZoomPercentageIndicator: View {
+    let percent: Int
+
+    var body: some View {
+        Text("\(percent)%")
+            .font(.system(size: 13, weight: .semibold).monospacedDigit())
+            .foregroundStyle(.primary)
+            .contentTransition(.numericText(value: Double(percent)))
+            .padding(.horizontal, 14)
+            .frame(height: 34)
+            .photonicGlass(in: Capsule())
+            .allowsHitTesting(false)
+            .accessibilityLabel("Zoom \(percent) percent")
     }
 }
 
